@@ -1,0 +1,93 @@
+@import "tailwindcss";
+
+/* ============================================================
+   STALVIAN — design tokens (from the Stalvian Design System)
+   Ink + cream + white. Serif display, sans UI. Flat. No gradients.
+   ============================================================ */
+
+@font-face {
+  font-family: "Martina Plantijn";
+  src: url("/fonts/MartinaPlantijn-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@theme {
+  /* Core brand */
+  --color-ink: #010510;
+  --color-cream: #f4f2ea;
+  --color-white: #ffffff;
+  --color-black: #000000;
+
+  /* Cool neutrals (on dark) */
+  --color-ink-700: #1f2228;
+  --color-ink-600: #2f323d;
+  --color-ink-500: #3e4351;
+  --color-slate-500: #5d6579;
+  --color-slate-400: #8692b1;
+  --color-slate-300: #9ba8ca;
+  --color-slate-200: #c3cbdf;
+
+  /* Warm neutrals (on light) */
+  --color-bone-100: #f3f4f7;
+  --color-bone-200: #e7e9ef;
+
+  /* Accents — sparingly */
+  --color-yellow: #ffd643;
+  --color-gold: #f7b612;
+  --color-green: #18eaa8;
+  --color-green-600: #11b984;
+  --color-blue: #2058cd;
+  --color-signal-blue: #1d5ebc;
+
+  /* Type */
+  --font-serif: "Martina Plantijn", "Source Serif Pro", ui-serif, Georgia, serif;
+  --font-sans: var(--font-geist, "Geist"), "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  /* Radii — mostly square */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+
+  /* Motion */
+  --ease-stalvian: cubic-bezier(0.2, 0, 0, 1);
+}
+
+html,
+body {
+  background: var(--color-white);
+  color: var(--color-black);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-ink);
+  color: var(--color-white);
+}
+
+/* Display type — Martina Plantijn only, never bold */
+.display-xl { font: 400 64px/72px var(--font-serif); letter-spacing: -0.01em; }
+.display-lg { font: 400 52px/64px var(--font-serif); letter-spacing: -0.005em; }
+.display-md { font: 400 40px/48px var(--font-serif); }
+.display-sm { font: 400 32px/40px var(--font-serif); }
+.display-xs { font: 400 24px/32px var(--font-serif); }
+
+@media (max-width: 768px) {
+  .display-xl { font: 400 40px/48px var(--font-serif); }
+  .display-lg { font: 400 34px/42px var(--font-serif); }
+  .display-md { font: 400 30px/38px var(--font-serif); }
+}
+
+/* The brand's signature dashed editorial card */
+.dashed-card {
+  border: 1px dashed var(--color-black);
+  border-radius: 0;
+}
+.dashed-card-on-ink {
+  border: 1px dashed var(--color-ink-500);
+  border-radius: 0;
+}

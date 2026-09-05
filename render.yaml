@@ -1,0 +1,53 @@
+# Render Blueprint — Stalvian UGC Creator Platform
+# Deploy: connect this repo on Render; it auto-detects this file.
+# The platform consumes the Stalvian Marketing Panel API — set PANEL_* vars
+# to the deployed panel (e.g. https://marketing-panel-api.onrender.com).
+
+databases:
+  - name: ugc-platform-db
+    plan: basic-256mb
+    databaseName: ugc_platform
+    user: app
+
+services:
+  # --- Backend API (FastAPI + APScheduler; no worker service needed) ---
+  - type: web
+    name: ugc-platform-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ugc-platform-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: PANEL_API_URL
+        sync: false # e.g. https://marketing-panel-api.onrender.com
+      - key: PANEL_SERVICE_EMAIL
+        sync: false # seed on the panel: python seed_allowed_emails.py <email> --password <pw>
+      - key: PANEL_SERVICE_PASSWORD
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false # content localization (Claude Haiku)
+      - key: YOUTUBE_API_KEY
+        sync: false # optional: auto view-tracking for YouTube links
+      - key: FRONTEND_URL
+        sync: false # e.g. https://ugc-platform-frontend.onrender.com
+
+  # --- Frontend ---
+  - type: web
+    name: ugc-platform-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: starter
+    healthCheckPath: /
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false # e.g. https://ugc-platform-api.onrender.com
