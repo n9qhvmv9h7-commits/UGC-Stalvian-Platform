@@ -71,6 +71,11 @@ export interface Scene {
 export interface StoryPayload {
   id: number;
   kind: string;
+  /** generating -> active | failed. Album stories are written in the
+      background, so a fresh one arrives as `generating`. */
+  status?: "generating" | "active" | "failed" | "retracted";
+  /** Set when status is `failed`. */
+  error?: string;
   album_name?: string | null;
   album_kind?: string | null;
   angle?: string | null;
@@ -387,13 +392,18 @@ export const fetchAlbumHistory = (slug: string, range: "1y" | "all") =>
 export const fetchAlbumDetail = (slug: string) =>
   api.get<AlbumDetail>(`/api/stories/albums/${slug}/detail`).then((r) => r.data);
 
+/* Returns immediately with a `generating` story (HTTP 202) — the panel takes
+   up to ~90s and no proxy in front of us will hold a request that long. Poll
+   fetchStory(id) until status is `active` or `failed`. */
 export const generateStory = (body: {
   album_kind: string;
   album_name: string;
   album_slug?: string;
   angle: string;
-}) =>
-  api.post<StoryPayload>("/api/stories/generate", body, { timeout: 300_000 }).then((r) => r.data);
+}) => api.post<StoryPayload>("/api/stories/generate", body).then((r) => r.data);
+
+export const fetchStory = (id: number) =>
+  api.get<StoryPayload>(`/api/stories/${id}`).then((r) => r.data);
 
 export const fetchMyStories = () =>
   api.get<{ items: StoryPayload[] }>("/api/stories/mine").then((r) => r.data);

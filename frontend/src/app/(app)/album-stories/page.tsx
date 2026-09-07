@@ -3,10 +3,10 @@
 /* Album Stories — one "Create New Script" button; a modal walks the creator
    through album (portrait list, like the Stalvian site) then angle. */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { fetchAlbums, fetchMyStories, generateStory, StoryPayload } from "@/lib/api";
+import { fetchAlbums, fetchMyStories, fetchStory, generateStory, StoryPayload } from "@/lib/api";
 import { albumImage } from "@/lib/album-images";
 import { Button, EmptyState, Eyebrow, Field, Spinner } from "@/components/ui";
 import { Modal } from "@/components/modal";
@@ -77,19 +77,45 @@ export default function AlbumStoriesPage() {
   const { data: catalog } = useQuery({ queryKey: ["albums"], queryFn: fetchAlbums });
   const { data: mine } = useQuery({ queryKey: ["my-stories"], queryFn: fetchMyStories });
 
+  /* Generation runs in the background on the server (it takes longer than any
+     proxy will hold a request), so the POST returns a `generating` story and we
+     poll it until it is written. */
+  const [pendingId, setPendingId] = useState<number | null>(null);
+
   const generate = useMutation({
     mutationFn: generateStory,
     onSuccess: (story) => {
-      setFreshStory(story);
-      setPendingLabel(null);
+      setPendingId(story.id);
       queryClient.invalidateQueries({ queryKey: ["my-stories"] });
-      toast.success("Your script is ready");
     },
     onError: () => {
       setPendingLabel(null);
-      toast.error("Generation failed — try again in a minute");
+      toast.error("Could not start generation — try again in a minute");
     },
   });
+
+  const { data: polled } = useQuery({
+    queryKey: ["story", pendingId],
+    queryFn: () => fetchStory(pendingId as number),
+    enabled: pendingId !== null,
+    refetchInterval: (query) =>
+      query.state.data?.status === "generating" ? 3000 : false,
+  });
+
+  useEffect(() => {
+    if (!polled || polled.status === "generating") return;
+    setPendingId(null);
+    setPendingLabel(null);
+    queryClient.invalidateQueries({ queryKey: ["my-stories"] });
+    if (polled.status === "failed") {
+      toast.error(polled.error || "Generation failed — try again in a minute");
+      return;
+    }
+    setFreshStory(polled);
+    toast.success("Your script is ready");
+  }, [polled, queryClient]);
+
+  const working = generate.isPending || pendingId !== null;
 
   const albums = useMemo<AlbumRow[]>(() => {
     if (!catalog) return [];
@@ -157,12 +183,12 @@ export default function AlbumStoriesPage() {
             angle, and we write the script in your language.
           </p>
         </div>
-        <Button icon="ph-plus" onClick={openModal} disabled={!catalog || generate.isPending}>
+        <Button icon="ph-plus" onClick={openModal} disabled={!catalog || working}>
           Create New Script
         </Button>
       </div>
 
-      {generate.isPending && (
+      {working && (
         <div className="dashed-card flex items-center gap-4 p-6">
           <Spinner />
           <div className="flex flex-col gap-1">
@@ -170,7 +196,8 @@ export default function AlbumStoriesPage() {
               Writing your script{pendingLabel ? ` — ${pendingLabel}` : ""}
             </span>
             <span className="text-[14px] leading-5 text-slate-500">
-              Researching and writing takes up to a minute. Stay on this page.
+              Researching and writing takes a minute or two. It keeps going if you
+              leave — the script will be waiting under Your stories.
             </span>
           </div>
         </div>
@@ -180,7 +207,7 @@ export default function AlbumStoriesPage() {
 
       <div className="flex flex-col gap-5">
         <h2 className="display-sm text-ink">Your stories</h2>
-        {mine && mine.items.length === 0 && !freshStory && !generate.isPending && (
+        {mine && mine.items.length === 0 && !freshStory && !working && (
           <EmptyState
             icon="ph-file-dashed"
             title="No stories yet"
@@ -194,7 +221,7 @@ export default function AlbumStoriesPage() {
         )}
         <div className="flex flex-col gap-4">
           {(mine?.items || [])
-            .filter((s) => s.id !== freshStory?.id)
+            .filter((s) => s.id !== freshStory?.id && s.id !== pendingId)
             .map((story) => (
               <ScriptCard key={story.id} story={story} />
             ))}

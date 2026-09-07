@@ -12,7 +12,7 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from app.auth import hash_password
 from app.config import settings
 from app.database import async_session, engine
-from app.models import Base, Creator
+from app.models import Base, Creator, Story
 
 logging.basicConfig(level=logging.INFO)
 
@@ -137,10 +137,31 @@ async def _prepare_database(max_wait_seconds: int = 150) -> None:
             delay = min(delay * 2, 10.0)
 
 
+async def _fail_orphaned_generations() -> None:
+    """Album-story generation runs as a background task, so a story left in
+    `generating` belongs to a process that is gone — a deploy, a restart, a
+    crash. Nothing will ever finish it, so fail it now rather than leave a
+    creator watching a spinner forever."""
+    async with async_session() as db:
+        rows = (
+            (await db.execute(select(Story).where(Story.status == "generating")))
+            .scalars()
+            .all()
+        )
+        if not rows:
+            return
+        for story in rows:
+            story.status = "failed"
+            story.payload = {"error": "Generation was interrupted — please try again."}
+        await db.commit()
+        logging.warning("Failed %d story generations interrupted by a restart", len(rows))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await _prepare_database()
     await _bootstrap_admin()
+    await _fail_orphaned_generations()
     from app.services import scheduler
     scheduler.start()
     yield
