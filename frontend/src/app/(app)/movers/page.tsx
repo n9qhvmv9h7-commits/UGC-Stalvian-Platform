@@ -10,7 +10,16 @@ import { ScriptCard } from "@/components/script-card";
 
 export default function MoversPage() {
   const queryClient = useQueryClient();
-  const { data, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteQuery({
+  const {
+    data,
+    isLoading,
+    isError,
+    fetchStatus,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
     queryKey: ["movers"],
     queryFn: ({ pageParam }) => fetchMovers(pageParam),
     initialPageParam: 1,
@@ -63,6 +72,24 @@ export default function MoversPage() {
       </div>
 
       {isLoading && <Spinner label="Loading stories…" />}
+
+      {/* A failed fetch must say so — the empty state below is gated on `data`,
+          so without this the page renders nothing under the header.
+          `paused` matters as much as `isError`: React Query parks a query
+          there after a failed attempt without ever setting the error flag,
+          and that state is indistinguishable from a blank page to the user. */}
+      {!data && (isError || fetchStatus === "paused") && (
+        <EmptyState
+          icon="ph-plugs"
+          title="Stories unavailable"
+          body="The Stalvian server isn't reachable right now, so the feed couldn't load."
+          action={
+            <Button kind="secondary" size="m" onClick={() => refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      )}
 
       {data && items.length === 0 && (
         <EmptyState

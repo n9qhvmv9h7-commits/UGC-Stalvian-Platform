@@ -354,7 +354,7 @@ function AlbumCard({ album, kind }: { album: AlbumStats; kind: "fund" | "politic
 
 export default function AlbumsPage() {
   const [kind, setKind] = useState<"fund" | "politician">("fund");
-  const { data, isLoading, isError, refetch } = useQuery({
+  const { data, isLoading, isError, fetchStatus, refetch } = useQuery({
     queryKey: ["albums"],
     queryFn: fetchAlbums,
   });
@@ -402,8 +402,10 @@ export default function AlbumsPage() {
       {isLoading && <Spinner label="Loading albums…" />}
 
       {/* The catalog lives on the panel — a failed fetch must say so rather
-          than leave the page blank under the header. */}
-      {isError && !data && (
+          than leave the page blank under the header. `paused` counts too:
+          React Query parks a query there after a failed attempt without ever
+          setting the error flag. */}
+      {!data && (isError || fetchStatus === "paused") && (
         <EmptyState
           icon="ph-plugs"
           title="Albums unavailable"
