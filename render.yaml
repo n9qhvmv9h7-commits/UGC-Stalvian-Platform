@@ -35,7 +35,10 @@ services:
       - key: AUTH_SECRET
         generateValue: true
       - key: PANEL_API_URL
-        sync: false # e.g. https://marketing-panel-api.onrender.com
+        # The deployed Marketing Panel. Note the host does not match its
+        # service name ("marketing-panel-api") — Render keeps the hostname a
+        # service was first created with.
+        value: https://insider-trading-api-rqwi.onrender.com
       - key: PANEL_API_KEY
         sync: false # scoped key for the panel's /api/ugc/* surface
       - key: PANEL_WEBHOOK_SECRET
@@ -44,7 +47,9 @@ services:
         sync: false # content localization (Claude Haiku)
       - key: YOUTUBE_API_KEY
         sync: false # optional: auto view-tracking for YouTube links
-      # Both frontend origins — CORS rejects anything not listed here.
+      # Both frontend origins — CORS rejects anything not listed here. These
+      # stay blank until the first deploy assigns hostnames; Render does not
+      # guarantee <service-name>.onrender.com, so they cannot be predicted.
       - key: FRONTEND_URL
         sync: false # the creator app's URL, e.g. https://ugc-creators-web.onrender.com
       - key: ADMIN_URL
@@ -57,7 +62,7 @@ services:
       - key: BOOTSTRAP_ADMIN_PASSWORD
         sync: false
       - key: BOOTSTRAP_ADMIN_NAME
-        sync: false
+        value: Stalvian Admin
 
   # --- Creator app (public) ---
   - type: web
