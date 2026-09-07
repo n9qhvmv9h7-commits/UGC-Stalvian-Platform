@@ -1,10 +1,13 @@
 """Stalvian UGC Creator Platform — FastAPI entry point."""
+import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, select, text
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.auth import hash_password
 from app.config import settings
@@ -93,11 +96,50 @@ async def _bootstrap_admin() -> None:
         )
 
 
+# Connection errors worth waiting out: the socket is refused, DNS has not
+# published the host yet, or Postgres is up but still starting.
+_DB_NOT_READY = (OSError, InterfaceError, OperationalError)
+
+
+async def _prepare_database(max_wait_seconds: int = 150) -> None:
+    """Create/migrate tables, waiting for the database to accept connections.
+
+    Render provisions the database and the service in parallel, so on a first
+    deploy the API can boot before Postgres is listening. Exiting on the first
+    refused connection gets the whole deploy marked failed — even though the
+    next container start would have succeeded. Retrying here also covers
+    routine restarts and failovers, where the database briefly goes away.
+    """
+    deadline = time.monotonic() + max_wait_seconds
+    delay = 1.0
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(_migrate)
+                await conn.run_sync(Base.metadata.create_all)
+            if attempt > 1:
+                logging.info("Database ready after %d attempts", attempt)
+            return
+        except _DB_NOT_READY as exc:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                logging.error("Database unreachable after %ds — giving up", max_wait_seconds)
+                raise
+            logging.warning(
+                "Database not ready (attempt %d: %s) — retrying in %.0fs",
+                attempt,
+                type(exc).__name__,
+                delay,
+            )
+            await asyncio.sleep(min(delay, remaining))
+            delay = min(delay * 2, 10.0)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(_migrate)
-        await conn.run_sync(Base.metadata.create_all)
+    await _prepare_database()
     await _bootstrap_admin()
     from app.services import scheduler
     scheduler.start()
