@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { APP_MODE, HOME_PATH, isAdminPath } from "@/lib/app-mode";
 
 const PUBLIC_PATHS = ["/", "/login"];
 
@@ -17,17 +18,32 @@ function tokenLooksValid(token: string | undefined): boolean {
 }
 
 export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  /* Surface gating: a build serves either the creator app or the admin panel,
+     never both. This runs in EVERY environment — the mode is a property of the
+     build, not of the deploy — so `next start` locally behaves exactly like
+     the Render service it was built for. The auth guard below stays
+     production-only, keeping local dev (and DEV_AUTOLOGIN) as it was. */
+  if (APP_MODE === "creator" && isAdminPath(pathname)) {
+    return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+  if (APP_MODE === "admin" && !isAdminPath(pathname) && pathname !== "/login") {
+    // Covers "/" too, which is the Render health check path: a 3xx counts as
+    // healthy, so the admin service passes its check on the redirect.
+    return NextResponse.redirect(new URL("/admin", request.url));
+  }
+
   if (process.env.NODE_ENV !== "production") return NextResponse.next();
 
   const authed = tokenLooksValid(request.cookies.get("ugc-token")?.value);
-  const { pathname } = request.nextUrl;
   const isPublic = PUBLIC_PATHS.includes(pathname);
 
   if (!authed && !isPublic) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
   if (authed && pathname === "/login") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL(HOME_PATH, request.url));
   }
   return NextResponse.next();
 }

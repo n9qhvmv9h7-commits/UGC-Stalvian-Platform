@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { login, setToken } from "@/lib/api";
+import { HOME_PATH } from "@/lib/app-mode";
 import { Button, Field } from "@/components/ui";
 
 export default function LoginPage() {
@@ -21,7 +22,9 @@ export default function LoginPage() {
       const result = await login({ email, password });
       setToken(result.token);
       queryClient.clear(); // never show the previous account's cached data
-      router.push("/dashboard");
+      // /admin on the admin deployment, /dashboard on the creator one — going
+      // to the wrong one would just bounce off middleware.
+      router.push(HOME_PATH);
     } catch (err: unknown) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 401) toast.error("Invalid email or password");

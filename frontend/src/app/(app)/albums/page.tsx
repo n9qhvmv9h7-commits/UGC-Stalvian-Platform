@@ -354,7 +354,10 @@ function AlbumCard({ album, kind }: { album: AlbumStats; kind: "fund" | "politic
 
 export default function AlbumsPage() {
   const [kind, setKind] = useState<"fund" | "politician">("fund");
-  const { data, isLoading } = useQuery({ queryKey: ["albums"], queryFn: fetchAlbums });
+  const { data, isLoading, isError, refetch } = useQuery({
+    queryKey: ["albums"],
+    queryFn: fetchAlbums,
+  });
 
   const albums = useMemo(() => {
     const rows = (kind === "fund" ? data?.funds : data?.politicians) ?? [];
@@ -397,6 +400,21 @@ export default function AlbumsPage() {
       </div>
 
       {isLoading && <Spinner label="Loading albums…" />}
+
+      {/* The catalog lives on the panel — a failed fetch must say so rather
+          than leave the page blank under the header. */}
+      {isError && !data && (
+        <EmptyState
+          icon="ph-plugs"
+          title="Albums unavailable"
+          body="The Stalvian engine isn't reachable right now, so the album catalog couldn't load."
+          action={
+            <Button kind="secondary" size="m" onClick={() => refetch()}>
+              Retry
+            </Button>
+          }
+        />
+      )}
 
       {data && albums.length === 0 && (
         <EmptyState

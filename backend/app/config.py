@@ -14,7 +14,9 @@ class Settings(BaseSettings):
 
     # Stalvian Marketing Panel — the single source of all content/data.
     # Auth is a scoped X-API-Key on the /api/ugc/* surface (see
-    # PANEL_INTEGRATION_CHANGES_FOR_UGC.md). Unset key -> mock panel mode.
+    # PANEL_INTEGRATION_CHANGES_FOR_UGC.md). An unset key is NOT a mock mode:
+    # every panel call simply fails, and the app serves whatever it already
+    # holds in panel_cache / stories.
     PANEL_API_URL: str = "http://localhost:8000"
     PANEL_API_KEY: str = ""
     # Shared HMAC secret for the panel's script.approved/script.retracted
@@ -36,7 +38,20 @@ class Settings(BaseSettings):
     PAYOUT_TIER2_CENTS_PER_K: int = 50
     PAYOUT_CAP_CENTS: int = 25000
 
+    # The two frontend origins. In production the creator app and the admin
+    # panel are separate Render services with separate URLs; both must be
+    # allowed through CORS. Locally one dev server on :3100 serves both, so
+    # ADMIN_URL stays empty.
     FRONTEND_URL: str = "http://localhost:3100"
+    ADMIN_URL: str = ""
+
+    # First-admin bootstrap. There is no signup endpoint and creating a creator
+    # requires an existing admin, so a fresh database has no way in. When these
+    # are set and the database holds no admin yet, one is created on startup.
+    # Safe to leave set (it no-ops once an admin exists); clear after first boot.
+    BOOTSTRAP_ADMIN_EMAIL: str = ""
+    BOOTSTRAP_ADMIN_PASSWORD: str = ""
+    BOOTSTRAP_ADMIN_NAME: str = "Stalvian Admin"
 
     class Config:
         env_file = ".env"

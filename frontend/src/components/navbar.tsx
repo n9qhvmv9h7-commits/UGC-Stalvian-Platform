@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearToken, fetchMe, getToken } from "@/lib/api";
+import { ADMIN_HREF } from "@/lib/app-mode";
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "ph-squares-four" },
@@ -60,15 +61,17 @@ export function Sidebar() {
           );
         })}
         {me?.is_admin && (
-          <Link
-            href="/admin"
+          /* The admin panel is its own deployment on its own URL — a plain
+             <a> (full page load), not next/link, since it may be off-origin. */
+          <a
+            href={ADMIN_HREF}
             className={`flex items-center gap-3 rounded-[8px] px-3 py-2.5 text-[15px] font-medium leading-6 transition-colors ${
               pathname.startsWith("/admin") ? "bg-white/10 text-white" : "text-white/60 hover:text-white"
             }`}
           >
             <i className="ph ph-shield-check text-[20px]" />
             Admin
-          </Link>
+          </a>
         )}
       </nav>
 
@@ -160,14 +163,14 @@ export function MobileNav() {
           </Link>
         ))}
         {me?.is_admin && (
-          <Link
-            href="/admin"
+          <a
+            href={ADMIN_HREF}
             className={`whitespace-nowrap rounded-full px-4 py-2 text-[13px] font-medium ${
               pathname.startsWith("/admin") ? "bg-ink text-white" : "text-slate-500"
             }`}
           >
             Admin
-          </Link>
+          </a>
         )}
       </div>
     </div>

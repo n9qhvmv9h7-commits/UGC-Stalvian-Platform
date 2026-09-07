@@ -4,11 +4,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import inspect, text
+from sqlalchemy import inspect, select, text
 
+from app.auth import hash_password
 from app.config import settings
-from app.database import engine
-from app.models import Base
+from app.database import async_session, engine
+from app.models import Base, Creator
 
 logging.basicConfig(level=logging.INFO)
 
@@ -44,11 +45,60 @@ def _migrate(conn):
                 conn.execute(text(stmt))
 
 
+async def _bootstrap_admin() -> None:
+    """Create the first admin when the database holds none.
+
+    Access is invite-only: there is no signup endpoint, and POST
+    /api/admin/creators requires an existing admin. A fresh production database
+    would therefore have no way in. This runs on every boot and does nothing at
+    all once any admin exists, so the env vars are safe to leave set.
+
+    An existing account with the same email is promoted rather than replaced —
+    its password is never overwritten from the environment.
+    """
+    if not (settings.BOOTSTRAP_ADMIN_EMAIL and settings.BOOTSTRAP_ADMIN_PASSWORD):
+        return
+    email = settings.BOOTSTRAP_ADMIN_EMAIL.lower().strip()
+    async with async_session() as db:
+        has_admin = (
+            await db.execute(select(Creator.id).where(Creator.is_admin.is_(True)).limit(1))
+        ).first()
+        if has_admin is not None:
+            return
+        existing = (
+            await db.execute(select(Creator).where(Creator.email == email))
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.is_admin = True
+            existing.status = "approved"
+            await db.commit()
+            logging.warning(
+                "Bootstrap: promoted existing account %s to admin "
+                "(its current password is unchanged)",
+                email,
+            )
+            return
+        db.add(
+            Creator(
+                email=email,
+                password_hash=hash_password(settings.BOOTSTRAP_ADMIN_PASSWORD),
+                name=(settings.BOOTSTRAP_ADMIN_NAME or email.split("@")[0]).strip(),
+                status="approved",
+                is_admin=True,
+            )
+        )
+        await db.commit()
+        logging.warning(
+            "Bootstrap: created first admin %s — log in and change this password", email
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(_migrate)
         await conn.run_sync(Base.metadata.create_all)
+    await _bootstrap_admin()
     from app.services import scheduler
     scheduler.start()
     yield
@@ -56,9 +106,17 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Stalvian UGC Platform", lifespan=lifespan)
 
-_origins = [settings.FRONTEND_URL.rstrip("/")]
+# The creator app and the admin panel are separate deployments with separate
+# URLs in production, so CORS has to allow both. dict.fromkeys dedupes while
+# keeping order (the two can be equal when one host serves everything).
+_configured = [settings.FRONTEND_URL, settings.ADMIN_URL]
 if settings.ENVIRONMENT != "production":
-    _origins += ["http://localhost:3100", "http://localhost:3000"]
+    _configured += ["http://localhost:3100", "http://localhost:3000"]
+# dict.fromkeys dedupes while keeping order — the two URLs are equal whenever a
+# single host serves both surfaces, and locally they equal the dev origin too.
+_origins = list(
+    dict.fromkeys(url.strip().rstrip("/") for url in _configured if url and url.strip())
+)
 
 app.add_middleware(
     CORSMiddleware,

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearToken, fetchMe, getToken } from "@/lib/api";
+import { CREATOR_HREF } from "@/lib/app-mode";
 import { AccountGate } from "@/components/account-gate";
 import { Button, EmptyState } from "@/components/ui";
 
@@ -64,13 +65,15 @@ function AdminSidebar() {
       </nav>
 
       <div className="flex flex-col gap-1 border-t border-ink-500 pt-4">
-        <Link
-          href="/dashboard"
+        {/* The creator app is its own deployment on its own URL — a plain <a>
+            (full page load), not next/link, since it may be off-origin. */}
+        <a
+          href={CREATOR_HREF}
           className="flex items-center gap-3 rounded-[8px] px-3 py-2.5 text-[15px] font-medium leading-6 text-white/60 transition-colors hover:text-white"
         >
           <i className="ph ph-arrow-u-up-left text-[20px]" />
           Creator App
-        </Link>
+        </a>
         <button
           onClick={logout}
           className="flex cursor-pointer items-center gap-3 rounded-[8px] px-3 py-2.5 text-left text-[15px] font-medium leading-6 text-white/60 transition-colors hover:text-white"
@@ -108,9 +111,9 @@ function AdminMobileNav() {
           </span>
         </Link>
         <div className="flex items-center gap-4">
-          <Link href="/dashboard" className="text-white/70 hover:text-white" aria-label="Creator app">
+          <a href={CREATOR_HREF} className="text-white/70 hover:text-white" aria-label="Creator app">
             <i className="ph ph-arrow-u-up-left text-[20px]" />
-          </Link>
+          </a>
           <button
             onClick={() => {
               clearToken();
@@ -154,11 +157,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               title="Admin only"
               body="This is the Stalvian internal platform. Your account doesn't have access."
               action={
-                <Link href="/dashboard">
+                <a href={CREATOR_HREF}>
                   <Button kind="secondary" size="m">
                     Back to the Creator App
                   </Button>
-                </Link>
+                </a>
               }
             />
           </div>

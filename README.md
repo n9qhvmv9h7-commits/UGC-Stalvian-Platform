@@ -1,6 +1,6 @@
 # Stalvian UGC Creator Platform
 
-A platform where creators sign up, get ready-to-shoot video scripts about Stalvian —
+A platform where invited creators get ready-to-shoot video scripts about Stalvian —
 built from real market data — and get paid per video based on views.
 
 **All content and data comes from the [Stalvian Marketing Panel](../Stalvian-Marketing-Panel) API.**
@@ -56,7 +56,8 @@ Everything served to creators is stored in this project's own database:
 
 ## Language
 
-Creators pick a language at signup (en/es/fr/de/it/pt/nl/pl). Album stories are
+Each creator has a language (en/es/fr/de/it/pt/nl/pl), set when the team invites
+them and changeable in Settings. Album stories are
 translated on generation; feed stories are translated lazily on first request and
 cached per (story, language) — Claude Haiku via `ANTHROPIC_API_KEY`.
 
@@ -67,7 +68,10 @@ cached per (story, language) — Claude Haiku via `ANTHROPIC_API_KEY`.
 - `frontend/` — Next.js 16 (App Router) + Tailwind v4, styled with the **Stalvian
   Design System** (ink `#010510` / cream `#F4F2EA`, Martina Plantijn display, Geist UI,
   Phosphor icons, dashed editorial cards, European number formatting).
-- Auth: self-service signup → bcrypt + HS256 JWT (`ugc-token` cookie, Bearer header).
+  One codebase, **two deployments**: `NEXT_PUBLIC_APP_MODE` (`creator` | `admin` | `all`)
+  decides which surface a build serves. `src/lib/app-mode.ts` holds the vocabulary,
+  `src/middleware.ts` enforces it. Locally the default `all` serves both on :3100.
+- Auth: invite-only accounts → bcrypt + HS256 JWT (`ugc-token` cookie, Bearer header).
   Admin accounts (`is_admin`) verify TikTok/IG views and record payouts via `/api/admin/*`.
 
 ## Setup
@@ -102,16 +106,53 @@ npm run dev            # http://localhost:3100
 - Local stack: `docker compose up` (Postgres on 5433, API on 8100, web on 3100).
   A panel running on the host is reachable from the container as
   `http://host.docker.internal:8000` (preconfigured in compose).
-- Render: connect the repo — `render.yaml` provisions Postgres + API + frontend
-  (~$14/mo on starter plans). Set the `sync: false` secrets in the dashboard.
 - **Schema changes:** tables are created by `create_all` on startup, which never
   ALTERs existing tables. The first deploy works on an empty database; after
   that, adding/renaming columns needs a manual `ALTER TABLE` (or introduce
   Alembic) before deploying the model change.
 
+## Production deploy (Render)
+
+`render.yaml` provisions **four things in Frankfurt**: Postgres, the API, and *two*
+frontend services built from the same `frontend/Dockerfile` —
+
+| Service | Serves | Mode |
+|---|---|---|
+| `ugc-platform-api` | FastAPI + scheduler | — |
+| `ugc-creators-web` | the creator app; `/admin/*` redirects to `/dashboard` | `creator` |
+| `ugc-admin-web` | `/admin/*` and `/login` only; everything else redirects to `/admin` | `admin` |
+
+The admin panel is therefore never reachable on the public creator URL.
+
+`NEXT_PUBLIC_*` values are inlined at **build** time (Render passes a service's env
+vars to the Docker build as build args), and Render only assigns a service its URL
+after the first deploy — so the first rollout is two passes:
+
+1. **Create the blueprint.** Connect the repo; Render picks up `render.yaml` and
+   prompts for every `sync: false` value. Fill in the panel and API keys; leave the
+   three URL vars blank for now. Set `BOOTSTRAP_ADMIN_EMAIL` and
+   `BOOTSTRAP_ADMIN_PASSWORD` on the API — a fresh database has no accounts and
+   there is no signup, so this is the only way in.
+2. **Wire the URLs.** Once the three services are up, copy their `onrender.com` URLs:
+   - API → `NEXT_PUBLIC_API_URL` on **both** web services
+   - creator URL → `FRONTEND_URL` (API) and `NEXT_PUBLIC_CREATOR_URL` (admin web)
+   - admin URL → `ADMIN_URL` (API) and `NEXT_PUBLIC_ADMIN_URL` (creator web)
+3. **Redeploy both web services** so the new build args are baked in. Changing a
+   `NEXT_PUBLIC_*` var needs a *redeploy*, not a restart.
+4. **Log in** at the admin URL with the bootstrap credentials, change the password in
+   the creator app's Settings, then clear the `BOOTSTRAP_ADMIN_*` vars.
+
+Both URLs are separate origins, so the `ugc-token` cookie is not shared: an admin
+signs in once per URL. That is deliberate — it keeps the internal panel's session
+isolated from the public app.
+
+Custom domains can be added in the Render dashboard later with no code change; only
+the URL env vars above need updating (and a redeploy of the web services).
+
 ## Admin
 
-Promote an account, then use the admin endpoints (or build a UI later):
+The first admin comes from the `BOOTSTRAP_ADMIN_*` env vars (see
+[Production deploy](#production-deploy-render)). To promote someone afterwards:
 
 ```sql
 UPDATE creators SET is_admin = true WHERE email = 'you@stalvian.com';

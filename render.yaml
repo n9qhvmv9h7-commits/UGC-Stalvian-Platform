@@ -1,11 +1,17 @@
 # Render Blueprint — Stalvian UGC Creator Platform
-# Deploy: connect this repo on Render; it auto-detects this file.
-# The platform consumes the Stalvian Marketing Panel API — set PANEL_* vars
-# to the deployed panel (e.g. https://marketing-panel-api.onrender.com).
+#
+# Three services + one database. The creator app and the admin panel are two
+# separate web services built from the SAME frontend/Dockerfile, told apart by
+# NEXT_PUBLIC_APP_MODE — so the admin panel is never served from the public
+# creator URL. See README "Production deploy" for the two-pass URL wiring.
+#
+# The platform consumes the Stalvian Marketing Panel API — set PANEL_* to the
+# deployed panel (e.g. https://marketing-panel-api.onrender.com).
 
 databases:
   - name: ugc-platform-db
     plan: basic-256mb
+    region: frankfurt
     databaseName: ugc_platform
     user: app
 
@@ -14,6 +20,7 @@ services:
   - type: web
     name: ugc-platform-api
     runtime: docker
+    region: frankfurt
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     plan: starter
@@ -29,25 +36,62 @@ services:
         generateValue: true
       - key: PANEL_API_URL
         sync: false # e.g. https://marketing-panel-api.onrender.com
-      - key: PANEL_SERVICE_EMAIL
-        sync: false # seed on the panel: python seed_allowed_emails.py <email> --password <pw>
-      - key: PANEL_SERVICE_PASSWORD
-        sync: false
+      - key: PANEL_API_KEY
+        sync: false # scoped key for the panel's /api/ugc/* surface
+      - key: PANEL_WEBHOOK_SECRET
+        sync: false # shared HMAC secret; unset -> /api/webhooks/panel returns 503
       - key: ANTHROPIC_API_KEY
         sync: false # content localization (Claude Haiku)
       - key: YOUTUBE_API_KEY
         sync: false # optional: auto view-tracking for YouTube links
+      # Both frontend origins — CORS rejects anything not listed here.
       - key: FRONTEND_URL
-        sync: false # e.g. https://ugc-platform-frontend.onrender.com
+        sync: false # the creator app's URL, e.g. https://ugc-creators-web.onrender.com
+      - key: ADMIN_URL
+        sync: false # the admin panel's URL, e.g. https://ugc-admin-web.onrender.com
+      # First admin. A fresh database has no accounts and there is no signup,
+      # so without these nobody can log in. Applied once, on startup, only while
+      # the database holds no admin. Clear them after the first successful login.
+      - key: BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+      - key: BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+      - key: BOOTSTRAP_ADMIN_NAME
+        sync: false
 
-  # --- Frontend ---
+  # --- Creator app (public) ---
   - type: web
-    name: ugc-platform-frontend
+    name: ugc-creators-web
     runtime: docker
+    region: frankfurt
     dockerfilePath: ./frontend/Dockerfile
     dockerContext: ./frontend
     plan: starter
     healthCheckPath: /
     envVars:
+      # Render passes these to the Docker build as build args, which is what
+      # NEXT_PUBLIC_* needs — they are inlined into the bundle at build time.
+      # Changing one requires a redeploy, not just a restart.
       - key: NEXT_PUBLIC_API_URL
         sync: false # e.g. https://ugc-platform-api.onrender.com
+      - key: NEXT_PUBLIC_APP_MODE
+        value: creator # serves the creator app; /admin/* redirects to /dashboard
+      - key: NEXT_PUBLIC_ADMIN_URL
+        sync: false # admin panel URL, for the "Admin" link admins see in the sidebar
+
+  # --- Admin panel (internal) ---
+  - type: web
+    name: ugc-admin-web
+    runtime: docker
+    region: frankfurt
+    dockerfilePath: ./frontend/Dockerfile
+    dockerContext: ./frontend
+    plan: starter
+    healthCheckPath: / # redirects to /admin; Render counts 3xx as healthy
+    envVars:
+      - key: NEXT_PUBLIC_API_URL
+        sync: false # same API as the creator app
+      - key: NEXT_PUBLIC_APP_MODE
+        value: admin # serves /admin/* + /login only; everything else -> /admin
+      - key: NEXT_PUBLIC_CREATOR_URL
+        sync: false # creator app URL, for the "Creator App" link in the admin sidebar
