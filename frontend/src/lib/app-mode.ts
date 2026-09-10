@@ -25,10 +25,13 @@ function crossAppHref(configured: string | undefined, sameHostFallback: string):
   return url || sameHostFallback;
 }
 
-/* Links that cross from one app to the other. When the other app is deployed
-   separately these are absolute URLs on a different origin; when one host
-   serves everything (local dev) they stay relative paths. Render them with a
-   plain <a>, never next/link — a full page load is right in both cases, and
-   client-side navigation cannot cross an origin anyway. */
-export const ADMIN_HREF = crossAppHref(process.env.NEXT_PUBLIC_ADMIN_URL, "/admin");
+/* The one link that crosses from one app to the other: the admin panel points
+   back at the creator app. There is deliberately no link the other way — the
+   creator app never advertises the admin panel, not even to an admin.
+
+   When the creator app is deployed separately this is an absolute URL on a
+   different origin; when one host serves everything (local dev) it stays a
+   relative path. Render it with a plain <a>, never next/link — a full page
+   load is right in both cases, and client-side navigation cannot cross an
+   origin anyway. */
 export const CREATOR_HREF = crossAppHref(process.env.NEXT_PUBLIC_CREATOR_URL, "/dashboard");

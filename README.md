@@ -136,7 +136,8 @@ after the first deploy — so the first rollout is two passes:
 2. **Wire the URLs.** Once the three services are up, copy their `onrender.com` URLs:
    - API → `NEXT_PUBLIC_API_URL` on **both** web services
    - creator URL → `FRONTEND_URL` (API) and `NEXT_PUBLIC_CREATOR_URL` (admin web)
-   - admin URL → `ADMIN_URL` (API) and `NEXT_PUBLIC_ADMIN_URL` (creator web)
+   - admin URL → `ADMIN_URL` (API, for CORS). The creator app needs nothing here —
+     it never links to the admin panel.
 3. **Redeploy both web services** so the new build args are baked in. Changing a
    `NEXT_PUBLIC_*` var needs a *redeploy*, not a restart.
 4. **Log in** at the admin URL with the bootstrap credentials, change the password in
@@ -164,5 +165,6 @@ UPDATE creators SET is_admin = true WHERE email = 'you@stalvian.com';
 - `PATCH /api/admin/videos/{id}` — `{status: "verified", views: 12000}`
 - `POST /api/admin/payouts` — `{creator_id, amount_cents, note}` records a payment
 
-Admins also get an **Applications** page in the web app (visible in the sidebar
-when `is_admin` is set).
+The admin panel is reached only at the admin URL, by typing it. The creator app
+never links to it — an admin signing in there sees exactly the creator sidebar a
+creator sees. The admin shell has a one-way "Creator App" link back.

@@ -6,7 +6,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearToken, fetchMe, getToken } from "@/lib/api";
-import { ADMIN_HREF } from "@/lib/app-mode";
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "ph-squares-four" },
@@ -60,19 +59,6 @@ export function Sidebar() {
             </Link>
           );
         })}
-        {me?.is_admin && (
-          /* The admin panel is its own deployment on its own URL — a plain
-             <a> (full page load), not next/link, since it may be off-origin. */
-          <a
-            href={ADMIN_HREF}
-            className={`flex items-center gap-3 rounded-[8px] px-3 py-2.5 text-[15px] font-medium leading-6 transition-colors ${
-              pathname.startsWith("/admin") ? "bg-white/10 text-white" : "text-white/60 hover:text-white"
-            }`}
-          >
-            <i className="ph ph-shield-check text-[20px]" />
-            Admin
-          </a>
-        )}
       </nav>
 
       <div className="flex flex-col gap-1 border-t border-ink-500 pt-4">
@@ -117,11 +103,6 @@ export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data: me } = useQuery({
-    queryKey: ["me"],
-    queryFn: fetchMe,
-    enabled: !!getToken(),
-  });
 
   return (
     <div className="lg:hidden">
@@ -162,16 +143,6 @@ export function MobileNav() {
             {link.label}
           </Link>
         ))}
-        {me?.is_admin && (
-          <a
-            href={ADMIN_HREF}
-            className={`whitespace-nowrap rounded-full px-4 py-2 text-[13px] font-medium ${
-              pathname.startsWith("/admin") ? "bg-ink text-white" : "text-slate-500"
-            }`}
-          >
-            Admin
-          </a>
-        )}
       </div>
     </div>
   );

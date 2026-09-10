@@ -81,8 +81,6 @@ services:
         sync: false # e.g. https://ugc-platform-api.onrender.com
       - key: NEXT_PUBLIC_APP_MODE
         value: creator # serves the creator app; /admin/* redirects to /dashboard
-      - key: NEXT_PUBLIC_ADMIN_URL
-        sync: false # admin panel URL, for the "Admin" link admins see in the sidebar
 
   # --- Admin panel (internal) ---
   - type: web
