@@ -14,40 +14,12 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  fetchDailyEarnings,
-  fetchEarnings,
-  fetchMyReferrals,
-  type DailyEarnings,
-  type PayoutFormula,
-} from "@/lib/api";
+import { fetchEarnings, fetchMyReferrals, type PayoutFormula } from "@/lib/api";
 import { formatDate, formatEuros, formatViews } from "@/lib/format";
 import { Badge, Button, Eyebrow, StatCard } from "@/components/ui";
-import { DailyBarChart } from "@/components/bar-chart";
+import { EarningsChartCard } from "@/components/earnings-chart";
 import { Modal } from "@/components/modal";
 import { ReferralCode } from "@/components/referral-code";
-
-const HORIZONS = [
-  { value: 7, label: "7 days" },
-  { value: 30, label: "30 days" },
-  { value: 90, label: "90 days" },
-  { value: 365, label: "1 year" },
-];
-
-/* Which payout stream the chart is showing. The API already returns all three
-   numbers per day, so switching is a re-read of the same response — no refetch. */
-type Stream = "all" | "views" | "trades";
-
-const STREAMS: {
-  value: Stream;
-  label: string;
-  day: (d: DailyEarnings["days"][number]) => number;
-  total: (t: DailyEarnings) => number;
-}[] = [
-  { value: "all", label: "Both", day: (d) => d.earned_cents, total: (t) => t.total_cents },
-  { value: "views", label: "Views", day: (d) => d.views_cents, total: (t) => t.views_cents },
-  { value: "trades", label: "Trades", day: (d) => d.commission_cents, total: (t) => t.commission_cents },
-];
 
 function payoutFor(views: number, f: PayoutFormula): number {
   if (views < f.min_views) return 0;
@@ -56,33 +28,6 @@ function payoutFor(views: number, f: PayoutFormula): number {
   const tier1 = Math.min(thousands - 1, tier1Max - 1) * f.tier1_cents_per_1k;
   const tier2 = Math.max(thousands - tier1Max, 0) * f.tier2_cents_per_1k;
   return Math.min(f.base_cents + tier1 + tier2, f.cap_cents);
-}
-
-/* The segmented pill control used for both chart filters. */
-function Pills<T extends string | number>({
-  value,
-  onChange,
-  options,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-}) {
-  return (
-    <div className="flex gap-1 rounded-full bg-bone-100 p-1">
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          onClick={() => onChange(o.value)}
-          className={`cursor-pointer rounded-full px-4 py-1.5 text-[13px] font-medium leading-4 ${
-            value === o.value ? "bg-ink text-white" : "text-slate-500 hover:text-ink"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
 }
 
 function StreamHeader({
@@ -116,22 +61,13 @@ export default function EarningsPage() {
   const { data } = useQuery({ queryKey: ["earnings"], queryFn: fetchEarnings });
   const { data: referrals } = useQuery({ queryKey: ["my-referrals"], queryFn: fetchMyReferrals });
   const [simViews, setSimViews] = useState(25000);
-  const [horizon, setHorizon] = useState(30);
-  const [stream, setStream] = useState<Stream>("all");
   const [explainerOpen, setExplainerOpen] = useState(false);
-  const { data: daily } = useQuery({
-    queryKey: ["earnings-daily", horizon],
-    queryFn: () => fetchDailyEarnings(horizon),
-    placeholderData: (prev) => prev, // keep bars while a new horizon loads
-  });
 
   const simPayout = useMemo(
     () => (data ? payoutFor(simViews, data.formula) : 0),
     [data, simViews]
   );
 
-  const active = STREAMS.find((s) => s.value === stream)!;
-  const horizonLabel = HORIZONS.find((h) => h.value === horizon)?.label;
   const commissionPct = referrals?.commission_pct ?? data?.formula.commission_pct;
   const pct = commissionPct !== undefined ? `${commissionPct}%` : "a share";
 
@@ -151,51 +87,13 @@ export default function EarningsPage() {
         </Button>
       </div>
 
+      <EarningsChartCard />
+
       {/* Across both streams — the numbers a creator actually gets paid on */}
       <div className="flex flex-col gap-10 sm:flex-row">
         <StatCard value={data ? formatEuros(data.balance_cents) : "—"} description="Current balance" />
         <StatCard value={data ? formatEuros(data.earned_cents) : "—"} description="Earned all-time" />
         <StatCard value={data ? formatEuros(data.paid_cents) : "—"} description="Paid out to date" />
-      </div>
-
-      {/* Daily earnings chart — filterable by stream and horizon */}
-      <div className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex flex-col gap-1">
-            <h2 className="display-xs text-ink">Earnings per day</h2>
-            <p className="text-[14px] leading-5 text-slate-500">
-              {daily ? (
-                <>
-                  <span className="font-medium text-ink">{formatEuros(active.total(daily))}</span>{" "}
-                  {stream === "views" ? "from views" : stream === "trades" ? "from trades" : "earned"} in
-                  the last {horizonLabel}
-                  {stream === "all" && daily.total_cents > 0 && (
-                    <span className="text-slate-400">
-                      {" "}· {formatEuros(daily.views_cents)} views ·{" "}
-                      {formatEuros(daily.commission_cents)} trades
-                    </span>
-                  )}
-                </>
-              ) : (
-                "Loading…"
-              )}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Pills value={stream} onChange={setStream} options={STREAMS} />
-            <Pills value={horizon} onChange={setHorizon} options={HORIZONS} />
-          </div>
-        </div>
-        {daily && (
-          <DailyBarChart
-            data={daily.days.map((d) => ({ date: d.date, value_cents: active.day(d) }))}
-          />
-        )}
-        {daily && active.total(daily) === 0 && (
-          <p className="text-[14px] leading-5 text-slate-500">
-            Nothing in this period yet.
-          </p>
-        )}
       </div>
 
       {/* ---------------- Stream 1: views ---------------- */}

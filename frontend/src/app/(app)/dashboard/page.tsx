@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchBreaking, fetchEarnings, fetchMe, fetchMovers, fetchMyVideos } from "@/lib/api";
 import { formatEuros, formatViews, timeAgo } from "@/lib/format";
 import { Badge, Button, Eyebrow, StatCard } from "@/components/ui";
+import { EarningsChartCard } from "@/components/earnings-chart";
 import { ReferralCode } from "@/components/referral-code";
 
 export default function DashboardPage() {
@@ -26,6 +27,10 @@ export default function DashboardPage() {
           Here is where you stand.
         </h1>
       </div>
+
+      {/* The chart leads: how earnings are trending is the question this page
+          exists to answer, and the totals below read as its summary. */}
+      <EarningsChartCard />
 
       <div className="flex flex-col gap-10 sm:flex-row">
         <StatCard
