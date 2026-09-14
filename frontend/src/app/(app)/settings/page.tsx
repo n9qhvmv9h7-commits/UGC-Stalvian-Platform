@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { fetchMe, setToken, updateMe } from "@/lib/api";
 import { LANGUAGES } from "@/lib/format";
 import { Button, Eyebrow, Field, SelectField } from "@/components/ui";
+import { ReferralCode } from "@/components/referral-code";
 
 export default function SettingsPage() {
   const queryClient = useQueryClient();
@@ -102,6 +103,16 @@ export default function SettingsPage() {
         }}
         className="flex max-w-[560px] flex-col gap-10"
       >
+        <div className="flex flex-col gap-3">
+          <div className="text-[18px] leading-6 font-medium text-ink">Referral code</div>
+          <div className="flex flex-wrap items-center gap-4">
+            <ReferralCode code={me?.referral_code} />
+            <p className="max-w-[300px] text-[13px] leading-5 text-slate-500">
+              Fixed to your account. If it ever needs changing, ask the Stalvian team.
+            </p>
+          </div>
+        </div>
+
         <div className="flex flex-col gap-6">
           <h2 className="display-xs text-ink">Profile</h2>
           <Field

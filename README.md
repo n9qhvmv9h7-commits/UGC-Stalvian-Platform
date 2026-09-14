@@ -34,6 +34,27 @@ program (accounts, video tracking, payouts) on top.
 Examples: 1k → €5 · 10k → €14 · 50k → €54 · 100k → €79 · ~442k+ → €250 (cap).
 Formula lives in `backend/app/payout.py`; the frontend reads it from `GET /api/earnings/formula`.
 
+## Client referrals — the second income stream
+
+Every creator has a **referral code** (`POL-7K3M` style, generated on invite and
+backfilled on startup for older accounts). New Stalvian clients enter it during
+the product's onboarding; the creator then earns **25% of every fee that client
+pays**, for as long as they stay a client — no window, no cap. Views pay and fee
+share land in the same balance and are paid out together.
+
+- The Stalvian product reports sign-ups and fees over an API-key surface
+  (`GET /api/referrals/codes/{code}`, `POST /api/referrals/clients`,
+  `POST /api/referrals/fees`) — contract in `REFERRAL_API_REQUIREMENTS.md`.
+  `REFERRAL_API_KEY` unset → those endpoints answer 503.
+- Until the product integration is live (or to correct a record), admins
+  attribute clients and record fees by hand in **Admin › Referrals**.
+- Each fee event stores the creator's share computed at the rate in force
+  (`REFERRAL_COMMISSION_BPS`, default 2500); changing the rate never rewrites history.
+- Creators see their code on the dashboard, earnings page and settings, plus a
+  client list (masked labels only, never client identity) and their share.
+- Logic: `backend/app/services/referrals.py`, routes in `routes_referrals.py`,
+  tables `referred_clients` + `fee_events`.
+
 ## Access — invite-only
 
 There is **no public signup or landing page**. The Stalvian team creates
@@ -164,6 +185,8 @@ UPDATE creators SET is_admin = true WHERE email = 'you@stalvian.com';
 - `GET /api/admin/videos?status=pending` — queue of TikTok/IG links to verify
 - `PATCH /api/admin/videos/{id}` — `{status: "verified", views: 12000}`
 - `POST /api/admin/payouts` — `{creator_id, amount_cents, note}` records a payment
+- `GET /api/admin/referrals` — codes, referred clients and fee ledger per creator
+- `POST /api/admin/referrals/clients` / `POST /api/admin/referrals/fees` — manual attribution / fee entry
 
 The admin panel is reached only at the admin URL, by typing it. The creator app
 never links to it — an admin signing in there sees exactly the creator sidebar a

@@ -78,7 +78,12 @@ export default function AdminOverviewPage() {
         <StatCard value={String(kpis.active_creators)} description="Active creators" />
         <StatCard value={String(kpis.pending_review)} description="Videos pending review" />
         <StatCard value={formatEuros(kpis.total_earned_cents)} description="Earned all-time" />
-        <div className="flex-1" />
+        <StatCard
+          value={formatEuros(kpis.total_commission_cents)}
+          description={`From client fees all-time · ${kpis.referred_clients} referred client${
+            kpis.referred_clients === 1 ? "" : "s"
+          }`}
+        />
       </div>
 
       {/* Charts */}
@@ -106,8 +111,15 @@ export default function AdminOverviewPage() {
         <div className="flex flex-col gap-1">
           <h2 className="display-xs text-ink">Eligible earnings per day</h2>
           <p className="text-[14px] leading-5 text-slate-500">
-            Payout produced by view growth inside each video&apos;s 10-day earning window —
-            matches creator earnings pages to the cent.
+            Payout produced by view growth inside each video&apos;s 10-day earning window,
+            plus creators&apos; share of referred-client fees by fee date — matches creator
+            earnings pages to the cent.
+            {kpis.earned_cents > 0 && (
+              <span className="text-slate-400">
+                {" "}· {formatEuros(kpis.views_earned_cents)} from views ·{" "}
+                {formatEuros(kpis.commission_cents)} from fees
+              </span>
+            )}
           </p>
         </div>
         {kpis.earned_cents > 0 ? (

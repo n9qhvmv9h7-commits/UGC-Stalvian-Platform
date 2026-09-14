@@ -94,6 +94,7 @@ def _profile(creator: Creator) -> dict:
         "payout_method": creator.payout_method,
         "payout_details": creator.payout_details,
         "is_admin": creator.is_admin,
+        "referral_code": creator.referral_code,
         "created_at": creator.created_at.isoformat() if creator.created_at else None,
     }
 

@@ -13,6 +13,7 @@ from app.models import Creator, Payout, VideoSubmission, ViewSnapshot
 from app.payout import video_payout_cents
 from app.services.audit import audit
 from app.services.earning_window import eligible_views_map, window_cutoff
+from app.services.referrals import assign_referral_code
 from app.services.translator import SUPPORTED_LANGUAGES
 
 from datetime import datetime, timezone
@@ -76,10 +77,11 @@ async def create_creator(
     db.add(creator)
     try:
         await db.flush()  # creator.id for the audit row, committed atomically
+        await assign_referral_code(db, creator)
         await audit(
             db, admin, "creator.invite", "creator", creator.id,
             {"email": email, "name": creator.name, "language": creator.language,
-             "password_generated": generated},
+             "password_generated": generated, "referral_code": creator.referral_code},
         )
         await db.commit()
     except IntegrityError:
@@ -87,7 +89,10 @@ async def create_creator(
         raise HTTPException(status_code=409, detail="An account with this email already exists")
     await db.refresh(creator)
     return {
-        "creator": {"id": creator.id, "email": creator.email, "name": creator.name},
+        "creator": {
+            "id": creator.id, "email": creator.email, "name": creator.name,
+            "referral_code": creator.referral_code,
+        },
         # shown once to the admin, who shares it with the creator
         "password": password if generated else None,
     }
@@ -132,6 +137,7 @@ async def list_creators(
                 "payout_method": c.payout_method,
                 "payout_ready": bool(c.payout_method and c.payout_details),
                 "socials": _socials(c),
+                "referral_code": c.referral_code,
                 "is_admin": c.is_admin,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
             }

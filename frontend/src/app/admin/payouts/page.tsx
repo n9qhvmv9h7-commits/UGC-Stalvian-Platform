@@ -92,8 +92,9 @@ export default function AdminPayoutsPage() {
       <div className="flex flex-col gap-2">
         <h1 className="display-md text-ink">Payouts</h1>
         <p className="max-w-[560px] text-[16px] leading-6 text-slate-500">
-          Balances are eligible earnings minus what&apos;s been paid. Record each payment
-          here after sending it — creators see it on their earnings page immediately.
+          Balances are eligible earnings (video views plus the creator&apos;s share of
+          referred-client fees) minus what&apos;s been paid. Record each payment here after
+          sending it — creators see it on their earnings page immediately.
         </p>
       </div>
 
@@ -101,11 +102,13 @@ export default function AdminPayoutsPage() {
         <h2 className="display-xs text-ink">Balances</h2>
         {data.balances.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left">
+            <table className="w-full min-w-[940px] text-left">
               <thead>
                 <tr className="border-b border-ink">
                   <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">Creator</th>
                   <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">Views</th>
+                  <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">From views</th>
+                  <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">From fees</th>
                   <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">Earned</th>
                   <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">Paid</th>
                   <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">Balance</th>
@@ -123,6 +126,17 @@ export default function AdminPayoutsPage() {
                     </td>
                     <td className="py-3 pr-4 text-right text-[14px] leading-5 text-slate-500">
                       {formatViews(b.eligible_views)}
+                    </td>
+                    <td className="py-3 pr-4 text-right text-[14px] leading-5 text-slate-500">
+                      {formatEuros(b.views_earned_cents)}
+                    </td>
+                    <td className="py-3 pr-4 text-right text-[14px] leading-5 text-slate-500">
+                      {formatEuros(b.commission_cents)}
+                      {b.referred_clients > 0 && (
+                        <span className="ml-1 text-[11px] text-slate-400">
+                          {b.referred_clients} client{b.referred_clients === 1 ? "" : "s"}
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 pr-4 text-right text-[14px] leading-5 text-ink">
                       {formatEuros(b.earned_cents)}

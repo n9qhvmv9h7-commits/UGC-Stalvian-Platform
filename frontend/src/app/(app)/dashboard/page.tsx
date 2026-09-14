@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchBreaking, fetchEarnings, fetchMe, fetchMovers, fetchMyVideos } from "@/lib/api";
 import { formatEuros, formatViews, timeAgo } from "@/lib/format";
 import { Badge, Button, Eyebrow, StatCard } from "@/components/ui";
+import { ReferralCode } from "@/components/referral-code";
 
 export default function DashboardPage() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
@@ -33,7 +34,7 @@ export default function DashboardPage() {
         />
         <StatCard
           value={earnings ? formatEuros(earnings.earned_cents) : "—"}
-          description="Earned all-time across your videos"
+          description="Earned all-time, views and client fees"
         />
         <StatCard
           value={earnings ? formatViews(earnings.total_views) : "—"}
@@ -43,6 +44,33 @@ export default function DashboardPage() {
           value={videos ? String(videos.items.length) : "—"}
           description="Videos submitted for tracking"
         />
+      </div>
+
+      {/* Referral code — always one click away */}
+      <div className="dashed-card flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between lg:p-8">
+        <div className="flex flex-col gap-2">
+          <div className="text-[18px] font-medium leading-6 text-ink">Your referral code</div>
+          <p className="max-w-[520px] text-[15px] leading-5 text-slate-500">
+            Clients who enter it when they join Stalvian pay you{" "}
+            {earnings ? `${earnings.formula.commission_pct}%` : "a share"} of their fees.
+            {earnings && earnings.referral.clients > 0 && (
+              <>
+                {" "}
+                <span className="text-ink">
+                  {earnings.referral.active_clients} active client
+                  {earnings.referral.active_clients === 1 ? "" : "s"} ·{" "}
+                  {formatEuros(earnings.commission_earned_cents)} earned from fees.
+                </span>
+              </>
+            )}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <ReferralCode code={me?.referral_code ?? earnings?.referral.code} />
+          <Link href="/earnings" className="text-[14px] leading-5 text-blue">
+            How it works
+          </Link>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">

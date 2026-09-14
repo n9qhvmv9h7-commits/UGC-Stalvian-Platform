@@ -26,6 +26,7 @@ from app.models import AuditLog, Creator, Payout, Story, VideoSubmission
 from app.payout import video_payout_cents
 from app.services.earning_window import eligible_views_map
 from app.services.metrics import daily_metrics, fetch_snapshots
+from app.services.referrals import commission_totals, daily_commission
 
 router = APIRouter(prefix="/api/admin", tags=["admin-metrics"])
 
@@ -74,11 +75,20 @@ async def overview(
     for v in verified:
         earned_by_creator[v.creator_id] += video_payout_cents(eligible.get(v.id, 0))
         eligible_views_by_creator[v.creator_id] += eligible.get(v.id, 0)
+    # Referral commission is the second stream in every € figure below —
+    # balances must match what creators see, and they see one balance.
+    commission = await commission_totals(db)
+    views_earned_by_creator = dict(earned_by_creator)
+    for cid, t in commission.items():
+        earned_by_creator[cid] += t["commission_cents"]
+    admins = {c.id for c in creators if c.is_admin}
+    period_commission = await daily_commission(
+        db, [c.id for c in creators if not c.is_admin], days
+    )
     paid_by_creator: dict[int, int] = defaultdict(int)
     for p in payouts:
         if p.status == "paid":
             paid_by_creator[p.creator_id] += p.amount_cents
-    admins = {c.id for c in creators if c.is_admin}
     # Clamped per creator — must equal the sum of creator-page balances.
     outstanding = sum(
         max(earned_by_creator.get(cid, 0) - paid_by_creator.get(cid, 0), 0)
@@ -143,12 +153,25 @@ async def overview(
     top_videos.sort(key=lambda r: (r["views_gained"], r["total_views"]), reverse=True)
     top_videos = top_videos[:12]
 
+    period_views_cents = sum(m.earned_cents for m in period.values())
+    period_commission_cents = sum(period_commission.values())
     return {
         "kpis": {
             "views_gained": sum(m.views_gained for m in period.values()),
-            "earned_cents": sum(m.earned_cents for m in period.values()),
+            "earned_cents": period_views_cents + period_commission_cents,
+            "views_earned_cents": period_views_cents,
+            "commission_cents": period_commission_cents,
             "total_earned_cents": sum(
                 v for cid, v in earned_by_creator.items() if cid not in admins
+            ),
+            "total_views_earned_cents": sum(
+                v for cid, v in views_earned_by_creator.items() if cid not in admins
+            ),
+            "total_commission_cents": sum(
+                t["commission_cents"] for cid, t in commission.items() if cid not in admins
+            ),
+            "referred_clients": sum(
+                t["clients"] for cid, t in commission.items() if cid not in admins
             ),
             "paid_cents": sum(
                 v for cid, v in paid_by_creator.items() if cid not in admins
@@ -160,7 +183,13 @@ async def overview(
             "pending_review": statuses.get("pending", 0),
         },
         "daily": [
-            {"date": d.isoformat(), "views": m.views_gained, "earned_cents": m.earned_cents}
+            {
+                "date": d.isoformat(),
+                "views": m.views_gained,
+                "views_cents": m.earned_cents,
+                "commission_cents": period_commission.get(d, 0),
+                "earned_cents": m.earned_cents + period_commission.get(d, 0),
+            }
             for d, m in sorted(period.items())
         ],
         "platforms": [
@@ -185,7 +214,11 @@ async def creators_metrics(
     verified = [v for v in videos if v.status == "verified"]
     creators = (await db.execute(select(Creator))).scalars().all()
     payouts = (await db.execute(select(Payout))).scalars().all()
-    earned, eligible_views = await _earned_by_creator(db, verified)
+    views_earned, eligible_views = await _earned_by_creator(db, verified)
+    commission = await commission_totals(db)
+    earned: dict[int, int] = defaultdict(int)
+    for cid in set(views_earned) | set(commission):
+        earned[cid] = views_earned.get(cid, 0) + commission.get(cid, {}).get("commission_cents", 0)
 
     videos_by_creator: dict[int, int] = defaultdict(int)
     verified_by_creator: dict[int, int] = defaultdict(int)
@@ -214,6 +247,9 @@ async def creators_metrics(
                 "eligible_views": eligible_views.get(c.id, 0),
                 "total_views": total_views_by_creator.get(c.id, 0),
                 "earned_cents": earned.get(c.id, 0),
+                "views_earned_cents": views_earned.get(c.id, 0),
+                "commission_cents": commission.get(c.id, {}).get("commission_cents", 0),
+                "referred_clients": commission.get(c.id, {}).get("clients", 0),
                 "paid_cents": paid.get(c.id, 0),
                 "balance_cents": max(earned.get(c.id, 0) - paid.get(c.id, 0), 0),
                 "last_payout_at": (
@@ -322,7 +358,11 @@ async def payouts_summary(
     videos = await _fetch_videos(db)
     verified = [v for v in videos if v.status == "verified"]
     creators = (await db.execute(select(Creator))).scalars().all()
-    earned, eligible_views = await _earned_by_creator(db, verified)
+    views_earned, eligible_views = await _earned_by_creator(db, verified)
+    commission = await commission_totals(db)
+    earned: dict[int, int] = defaultdict(int)
+    for cid in set(views_earned) | set(commission):
+        earned[cid] = views_earned.get(cid, 0) + commission.get(cid, {}).get("commission_cents", 0)
     payout_rows = (
         (
             await db.execute(
@@ -350,6 +390,9 @@ async def payouts_summary(
             "email": c.email,
             "eligible_views": eligible_views.get(c.id, 0),
             "earned_cents": earned.get(c.id, 0),
+            "views_earned_cents": views_earned.get(c.id, 0),
+            "commission_cents": commission.get(c.id, {}).get("commission_cents", 0),
+            "referred_clients": commission.get(c.id, {}).get("clients", 0),
             "paid_cents": paid.get(c.id, 0),
             "balance_cents": max(earned.get(c.id, 0) - paid.get(c.id, 0), 0),
             "payout_method": c.payout_method,

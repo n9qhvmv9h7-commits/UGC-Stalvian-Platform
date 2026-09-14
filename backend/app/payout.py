@@ -36,6 +36,9 @@ def formula_description() -> dict:
     return {
         "currency": "EUR",
         "window_days": EARNING_WINDOW_DAYS,
+        # Second income stream: share of every fee paid by referred clients.
+        "commission_bps": settings.REFERRAL_COMMISSION_BPS,
+        "commission_pct": settings.REFERRAL_COMMISSION_BPS / 100,
         "min_views": settings.PAYOUT_MIN_VIEWS,
         "base_cents": settings.PAYOUT_BASE_CENTS,
         "tier1_cents_per_1k": settings.PAYOUT_TIER1_CENTS_PER_K,

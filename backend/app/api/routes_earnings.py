@@ -9,6 +9,7 @@ from app.models import Creator, Payout, VideoSubmission
 from app.payout import formula_description, video_payout_cents
 from app.services.earning_window import eligible_views_map
 from app.services.metrics import daily_metrics_db
+from app.services.referrals import commission_totals, daily_commission
 
 router = APIRouter(prefix="/api/earnings", tags=["earnings"])
 
@@ -40,12 +41,20 @@ async def daily_earnings(
         .all()
     )
     metrics = await daily_metrics_db(db, videos, days)
+    commission = await daily_commission(db, [creator.id], days)
     return {
         "days": [
-            {"date": day.isoformat(), "earned_cents": metrics[day].earned_cents}
+            {
+                "date": day.isoformat(),
+                "views_cents": metrics[day].earned_cents,
+                "commission_cents": commission.get(day, 0),
+                "earned_cents": metrics[day].earned_cents + commission.get(day, 0),
+            }
             for day in sorted(metrics)
         ],
-        "total_cents": sum(m.earned_cents for m in metrics.values()),
+        "views_cents": sum(m.earned_cents for m in metrics.values()),
+        "commission_cents": sum(commission.values()),
+        "total_cents": sum(m.earned_cents for m in metrics.values()) + sum(commission.values()),
     }
 
 
@@ -77,12 +86,26 @@ async def my_earnings(
 
     verified = [v for v in videos if v.status == "verified"]
     eligible = await eligible_views_map(db, verified)
-    earned = sum(video_payout_cents(eligible[v.id]) for v in verified)
+    views_earned = sum(video_payout_cents(eligible[v.id]) for v in verified)
+    referral = (await commission_totals(db, [creator.id])).get(creator.id) or {
+        "fees_cents": 0, "commission_cents": 0, "clients": 0, "active_clients": 0,
+    }
+    # One balance, two streams: views pay + share of referred clients' fees.
+    earned = views_earned + referral["commission_cents"]
     paid = sum(p.amount_cents for p in payouts if p.status == "paid")
     total_views = sum(eligible[v.id] for v in verified)
 
     return {
         "earned_cents": earned,
+        "views_earned_cents": views_earned,
+        "commission_earned_cents": referral["commission_cents"],
+        "referral": {
+            "code": creator.referral_code,
+            "clients": referral["clients"],
+            "active_clients": referral["active_clients"],
+            "fees_cents": referral["fees_cents"],
+            "commission_cents": referral["commission_cents"],
+        },
         "paid_cents": paid,
         "balance_cents": max(earned - paid, 0),
         "total_views": total_views,

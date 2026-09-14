@@ -46,6 +46,10 @@ class Creator(Base):
     payout_method: Mapped[str | None] = mapped_column(String(16), nullable=True)  # iban | paypal
     payout_details: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+    # The code new Stalvian clients enter during onboarding to credit this
+    # creator (e.g. "POL-7K3M"). Generated on invite, backfilled on startup for
+    # accounts that predate referrals.
+    referral_code: Mapped[str | None] = mapped_column(String(16), unique=True, index=True, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_login: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -154,4 +158,50 @@ class Payout(Base):
     amount_cents: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(16), default="paid")  # paid | pending
     note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ReferredClient(Base):
+    """A Stalvian client who entered a creator's referral code during
+    onboarding. Identified by the product's own client id (external_ref) so
+    the same client can never be attributed twice."""
+
+    __tablename__ = "referred_clients"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creators.id"), index=True)
+    external_ref: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    # Optional display label (e.g. a masked email "m***@gmail.com") — never
+    # the client's full identity; creators only ever see this label.
+    label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # active | churned — churned clients stay listed (their past fees still
+    # count) but are flagged so creators know the stream has stopped.
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    source: Mapped[str] = mapped_column(String(16), default="api")  # api | admin
+    attributed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FeeEvent(Base):
+    """A fee paid by a referred client, and the creator's share of it.
+
+    commission_cents is computed when the row is written (at the rate in force
+    then) so a later rate change never rewrites what a creator already earned.
+    """
+
+    __tablename__ = "fee_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    client_id: Mapped[int] = mapped_column(ForeignKey("referred_clients.id"), index=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creators.id"), index=True)  # denormalized for sums
+    # Idempotency key from the product (its own fee/transaction id). Unique
+    # when set, so a retried delivery can never double-pay.
+    external_ref: Mapped[str | None] = mapped_column(String(128), unique=True, nullable=True)
+    fee_cents: Mapped[int] = mapped_column(Integer)
+    commission_bps: Mapped[int] = mapped_column(Integer)
+    commission_cents: Mapped[int] = mapped_column(Integer)
+    currency: Mapped[str] = mapped_column(String(3), default="EUR")
+    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(16), default="api")  # api | admin
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

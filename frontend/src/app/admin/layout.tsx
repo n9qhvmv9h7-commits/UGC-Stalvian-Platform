@@ -17,6 +17,7 @@ const SECTIONS = [
   { href: "/admin/creators", label: "Creators", icon: "ph-users-three" },
   { href: "/admin/videos", label: "Video Review", icon: "ph-video-camera" },
   { href: "/admin/content", label: "Content", icon: "ph-film-slate" },
+  { href: "/admin/referrals", label: "Referrals", icon: "ph-handshake" },
   { href: "/admin/payouts", label: "Payouts", icon: "ph-currency-eur" },
   { href: "/admin/audit", label: "Audit Trail", icon: "ph-scroll" },
 ];

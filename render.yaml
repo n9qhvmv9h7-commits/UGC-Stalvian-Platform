@@ -47,6 +47,16 @@ services:
         sync: false # content localization (Claude Haiku)
       - key: YOUTUBE_API_KEY
         sync: false # optional: auto view-tracking for YouTube links
+      # Client referrals (see REFERRAL_API_REQUIREMENTS.md). The key is what the
+      # Stalvian product sends as X-API-Key when it validates a code, attributes
+      # a client or reports a fee; unset -> those endpoints return 503 and the
+      # admin panel records everything by hand.
+      - key: REFERRAL_API_KEY
+        sync: false
+      - key: REFERRAL_COMMISSION_BPS
+        value: "2500" # creators' share of referred-client fees, in basis points (25%)
+      - key: REFERRAL_SIGNUP_URL
+        sync: false # optional: where clients sign up, linked next to the code
       # Both frontend origins — CORS rejects anything not listed here. These
       # stay blank until the first deploy assigns hostnames; Render does not
       # guarantee <service-name>.onrender.com, so they cannot be predicted.

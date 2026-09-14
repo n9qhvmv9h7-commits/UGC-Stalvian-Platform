@@ -13,6 +13,7 @@ from app.auth import hash_password
 from app.config import settings
 from app.database import async_session, engine
 from app.models import Base, Creator, Story
+from app.services.referrals import backfill_referral_codes
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,6 +34,7 @@ def _migrate(conn):
             "instagram_handle": "ALTER TABLE creators ADD COLUMN instagram_handle VARCHAR(64)",
             "youtube_handle": "ALTER TABLE creators ADD COLUMN youtube_handle VARCHAR(64)",
             "strikes": "ALTER TABLE creators ADD COLUMN strikes INTEGER NOT NULL DEFAULT 0",
+            "referral_code": "ALTER TABLE creators ADD COLUMN referral_code VARCHAR(16)",
         },
         "stories": {
             "raw": "ALTER TABLE stories ADD COLUMN raw JSON",
@@ -46,6 +48,16 @@ def _migrate(conn):
         for name, stmt in columns_ddl.items():
             if name not in columns:
                 conn.execute(text(stmt))
+    # ALTER TABLE ADD COLUMN cannot carry UNIQUE portably, and create_all skips
+    # indexes on tables that already exist — so the uniqueness guarantee
+    # behind referral codes is created here, idempotently.
+    if "creators" in tables:
+        conn.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS ix_creators_referral_code "
+                "ON creators (referral_code)"
+            )
+        )
 
 
 async def _bootstrap_admin() -> None:
@@ -162,6 +174,8 @@ async def lifespan(app: FastAPI):
     await _prepare_database()
     await _bootstrap_admin()
     await _fail_orphaned_generations()
+    async with async_session() as db:
+        await backfill_referral_codes(db)
     from app.services import scheduler
     scheduler.start()
     yield
@@ -197,6 +211,7 @@ from app.api.routes_earnings import router as earnings_router
 from app.api.routes_admin import router as admin_router
 from app.api.routes_admin_metrics import router as admin_metrics_router
 from app.api.routes_webhooks import router as webhooks_router
+from app.api.routes_referrals import router as referrals_router
 
 app.include_router(auth_router)
 app.include_router(stories_router)
@@ -206,6 +221,7 @@ app.include_router(earnings_router)
 app.include_router(admin_router)
 app.include_router(admin_metrics_router)
 app.include_router(webhooks_router)
+app.include_router(referrals_router)
 
 
 @app.get("/health")

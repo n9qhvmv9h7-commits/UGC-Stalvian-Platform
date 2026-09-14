@@ -59,6 +59,8 @@ export interface Creator {
   payout_method: string | null;
   payout_details: string | null;
   is_admin: boolean;
+  /** The code new Stalvian clients enter during onboarding to credit this creator. */
+  referral_code: string | null;
 }
 
 export interface Scene {
@@ -149,11 +151,24 @@ export interface PayoutFormula {
   tier1_up_to_views: number;
   tier2_cents_per_1k: number;
   cap_cents: number;
+  /** Share of every fee paid by referred clients, in basis points (2500 = 25%). */
+  commission_bps: number;
+  commission_pct: number;
   examples: { views: number; payout_cents: number }[];
 }
 
 export interface Earnings {
+  /** views pay + referral commission — the one balance creators are paid on */
   earned_cents: number;
+  views_earned_cents: number;
+  commission_earned_cents: number;
+  referral: {
+    code: string | null;
+    clients: number;
+    active_clients: number;
+    fees_cents: number;
+    commission_cents: number;
+  };
   paid_cents: number;
   balance_cents: number;
   total_views: number;
@@ -207,6 +222,7 @@ export interface CreatorApplication {
   payout_method: string | null;
   payout_ready: boolean;
   socials: { platform: string; handle: string; url: string }[];
+  referral_code: string | null;
   is_admin: boolean;
   created_at: string | null;
 }
@@ -231,13 +247,18 @@ export interface AdminOverview {
   kpis: {
     views_gained: number;
     earned_cents: number;
+    views_earned_cents: number;
+    commission_cents: number;
     total_earned_cents: number;
+    total_views_earned_cents: number;
+    total_commission_cents: number;
+    referred_clients: number;
     paid_cents: number;
     outstanding_cents: number;
     active_creators: number;
     pending_review: number;
   };
-  daily: { date: string; views: number; earned_cents: number }[];
+  daily: { date: string; views: number; views_cents: number; commission_cents: number; earned_cents: number }[];
   platforms: { platform: string; views: number; videos: number }[];
   statuses: { status: string; count: number }[];
   top_creators: {
@@ -269,6 +290,9 @@ export interface CreatorMetrics {
   eligible_views: number;
   total_views: number;
   earned_cents: number;
+  views_earned_cents: number;
+  commission_cents: number;
+  referred_clients: number;
   paid_cents: number;
   balance_cents: number;
   last_payout_at: string | null;
@@ -288,6 +312,9 @@ export interface AdminPayoutBalance {
   email: string;
   eligible_views: number;
   earned_cents: number;
+  views_earned_cents: number;
+  commission_cents: number;
+  referred_clients: number;
   paid_cents: number;
   balance_cents: number;
   payout_method: string | null;
@@ -352,7 +379,10 @@ export const fetchAuditLog = (page: number, limit = 50) =>
 
 export const createCreator = (body: { email: string; name?: string; language?: string }) =>
   api
-    .post<{ creator: { id: number; email: string; name: string }; password: string | null }>(
+    .post<{
+      creator: { id: number; email: string; name: string; referral_code: string | null };
+      password: string | null;
+    }>(
       "/api/admin/creators",
       body
     )
@@ -436,7 +466,9 @@ export const deleteVideo = (id: number) => api.delete(`/api/videos/${id}`).then(
 export const fetchEarnings = () => api.get<Earnings>("/api/earnings").then((r) => r.data);
 
 export interface DailyEarnings {
-  days: { date: string; earned_cents: number }[];
+  days: { date: string; views_cents: number; commission_cents: number; earned_cents: number }[];
+  views_cents: number;
+  commission_cents: number;
   total_cents: number;
 }
 
@@ -444,5 +476,98 @@ export const fetchDailyEarnings = (days: number) =>
   api.get<DailyEarnings>("/api/earnings/daily", { params: { days } }).then((r) => r.data);
 
 export const fetchFormula = () => api.get<PayoutFormula>("/api/earnings/formula").then((r) => r.data);
+
+// ---------- Referrals ----------
+
+export interface ReferredClient {
+  id: number;
+  /** Masked label (e.g. "m***@gmail.com") — never the client's identity. */
+  label: string;
+  status: "active" | "churned";
+  attributed_at: string | null;
+  fees_cents: number;
+  commission_cents: number;
+  last_fee_at: string | null;
+}
+
+export interface MyReferrals {
+  code: string;
+  commission_bps: number;
+  commission_pct: number;
+  signup_url: string | null;
+  fees_cents: number;
+  commission_cents: number;
+  clients: ReferredClient[];
+  active_clients: number;
+}
+
+export const fetchMyReferrals = () =>
+  api.get<MyReferrals>("/api/referrals/me").then((r) => r.data);
+
+export interface AdminReferrals {
+  commission_bps: number;
+  commission_pct: number;
+  signup_url: string | null;
+  totals: { clients: number; active_clients: number; fees_cents: number; commission_cents: number };
+  creators: {
+    creator_id: number;
+    name: string;
+    email: string;
+    status: string;
+    code: string | null;
+    fees_cents: number;
+    commission_cents: number;
+    clients: number;
+    active_clients: number;
+  }[];
+  clients: {
+    id: number;
+    creator_id: number;
+    creator_name: string;
+    client_ref: string;
+    label: string | null;
+    status: "active" | "churned";
+    source: "api" | "admin";
+    attributed_at: string | null;
+  }[];
+  recent_fees: {
+    id: number;
+    creator: { id: number; name: string };
+    client: { id: number; client_ref: string; label: string | null };
+    fee_cents: number;
+    commission_cents: number;
+    commission_bps: number;
+    currency: string;
+    source: "api" | "admin";
+    note: string | null;
+    occurred_at: string | null;
+  }[];
+}
+
+export const fetchAdminReferrals = () =>
+  api.get<AdminReferrals>("/api/admin/referrals").then((r) => r.data);
+
+export const adminAttributeClient = (body: {
+  creator_id: number;
+  client_ref: string;
+  label?: string;
+  attributed_at?: string;
+}) => api.post<{ created: boolean; client_id: number }>("/api/admin/referrals/clients", body).then((r) => r.data);
+
+export const adminRecordFee = (body: {
+  client_id: number;
+  fee_cents: number;
+  occurred_at?: string;
+  note?: string;
+}) =>
+  api
+    .post<{ fee_id: number; fee_cents: number; commission_cents: number }>("/api/admin/referrals/fees", body)
+    .then((r) => r.data);
+
+export const adminSetClientStatus = (id: number, status: "active" | "churned") =>
+  api.patch(`/api/admin/referrals/clients/${id}`, { status }).then((r) => r.data);
+
+export const adminRegenerateCode = (creatorId: number) =>
+  api.post<{ code: string }>(`/api/admin/referrals/creators/${creatorId}/code`).then((r) => r.data);
 
 export default api;

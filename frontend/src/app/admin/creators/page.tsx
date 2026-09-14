@@ -35,7 +35,7 @@ const SORTS = [
 function InviteModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
   const [form, setForm] = useState({ email: "", name: "", language: "en" });
-  const [issued, setIssued] = useState<{ email: string; password: string } | null>(null);
+  const [issued, setIssued] = useState<{ email: string; password: string; code: string | null } | null>(null);
 
   const invite = useMutation({
     mutationFn: () =>
@@ -47,7 +47,12 @@ function InviteModal({ onClose }: { onClose: () => void }) {
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin-creators"] });
       queryClient.invalidateQueries({ queryKey: ["creator-metrics"] });
-      if (result.password) setIssued({ email: result.creator.email, password: result.password });
+      if (result.password)
+        setIssued({
+          email: result.creator.email,
+          password: result.password,
+          code: result.creator.referral_code,
+        });
       toast.success(`${result.creator.email} added`);
     },
     onError: (err: unknown) => {
@@ -87,6 +92,15 @@ function InviteModal({ onClose }: { onClose: () => void }) {
               change it in Settings.
             </p>
           </div>
+          {issued.code && (
+            <p className="text-[14px] leading-5 text-slate-500">
+              Their referral code is{" "}
+              <code className="rounded-[4px] bg-bone-100 px-2 py-1 text-[14px] text-ink">
+                {issued.code}
+              </code>{" "}
+              — it&apos;s on their dashboard, no need to send it.
+            </p>
+          )}
           <div className="flex gap-2">
             <Button onClick={onClose}>Done</Button>
             <Button
@@ -157,6 +171,13 @@ function MetricsStrip({ metrics }: { metrics: CreatorMetrics | undefined }) {
     { label: "Videos", value: `${metrics.verified_videos}/${metrics.videos}` },
     { label: "Eligible views", value: formatViews(metrics.eligible_views) },
     { label: "Total views", value: formatViews(metrics.total_views) },
+    { label: "From views", value: formatEuros(metrics.views_earned_cents) },
+    {
+      label: "From client fees",
+      value: `${formatEuros(metrics.commission_cents)}${
+        metrics.referred_clients > 0 ? ` · ${metrics.referred_clients} client${metrics.referred_clients === 1 ? "" : "s"}` : ""
+      }`,
+    },
     { label: "Earned", value: formatEuros(metrics.earned_cents) },
     { label: "Balance", value: formatEuros(metrics.balance_cents) },
   ];
@@ -236,9 +257,24 @@ function CreatorCard({
         </div>
       </div>
 
-      {creator.socials.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {creator.socials.map((s) => (
+      <div className="flex flex-wrap items-center gap-2">
+        {creator.referral_code && (
+          <button
+            type="button"
+            title="Copy referral code"
+            onClick={() => {
+              navigator.clipboard.writeText(creator.referral_code!);
+              toast.success("Code copied");
+            }}
+            className="inline-flex cursor-pointer items-center gap-2 rounded-[8px] border border-dashed border-ink bg-white px-3 py-2 text-[14px] font-medium leading-5 tracking-[0.04em] text-ink hover:bg-bone-100"
+          >
+            <i className="ph ph-handshake text-[18px]" />
+            {creator.referral_code}
+            <i className="ph ph-copy text-[14px] text-slate-500" />
+          </button>
+        )}
+        {creator.socials.length > 0 &&
+          creator.socials.map((s) => (
             <a
               key={s.platform}
               href={s.url}
@@ -251,8 +287,7 @@ function CreatorCard({
               <i className="ph ph-arrow-up-right text-[14px] text-slate-500" />
             </a>
           ))}
-        </div>
-      )}
+      </div>
 
       <MetricsStrip metrics={metrics} />
 
