@@ -1,9 +1,11 @@
 """HTTP client for the Stalvian Marketing Panel's /api/ugc/* surface.
 
 All content and data on the UGC platform originates from the panel. Auth is a
-scoped X-API-Key header (no login/refresh); the surface only ever returns
-approved content. Rate limits: 240 req/60s across the surface, 30 req/60s on
-album-story generation. See PANEL_INTEGRATION_CHANGES_FOR_UGC.md.
+scoped X-API-Key header (no login/refresh). The script feeds carry every script
+the panel holds — there is no curation gate, creators browse the lot and pick —
+except ones the panel has explicitly withdrawn, which arrive as retractions.
+Rate limits: 240 req/60s across the surface, 30 req/60s on album-story
+generation. See PANEL_INTEGRATION_CHANGES_FOR_UGC.md.
 """
 import logging
 
@@ -102,7 +104,7 @@ class PanelClient:
         page: int = 1,
         limit: int = 100,
     ) -> dict:
-        """{items, total, page, limit} — approved-only, newest-changed first."""
+        """{items, total, page, limit} — every script, newest-changed first."""
         params = {"feed": feed, "page": page, "limit": limit}
         if updated_since:
             params["updated_since"] = updated_since
