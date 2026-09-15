@@ -7,9 +7,15 @@
    it changes when a flag flips, and a frontend rebuild must not be needed to
    keep up. */
 
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { disconnectSocial, fetchSocialConnections, type SocialPlatform } from "@/lib/api";
+import {
+  disconnectSocial,
+  fetchSocialConnections,
+  startSocialConnect,
+  type SocialPlatform,
+} from "@/lib/api";
 import { Badge, Button } from "@/components/ui";
 
 const ICONS: Record<string, string> = {
@@ -24,6 +30,19 @@ export function useSocialConnections() {
 
 function PlatformRow({ platform }: { platform: SocialPlatform }) {
   const queryClient = useQueryClient();
+  const connect = useMutation({
+    mutationFn: () => startSocialConnect(platform.platform),
+    // Full-page navigation to the platform's consent screen. The callback
+    // lands on the API and redirects back to /settings with ?connected=.
+    onSuccess: (url) => {
+      window.location.href = url;
+    },
+    onError: (err: unknown) => {
+      const detail = (err as { response?: { data?: { detail?: string } } }).response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Could not start the connection");
+    },
+  });
+
   const disconnect = useMutation({
     mutationFn: () => disconnectSocial(platform.platform),
     onSuccess: () => {
@@ -68,11 +87,14 @@ function PlatformRow({ platform }: { platform: SocialPlatform }) {
           Disconnect
         </Button>
       ) : platform.connectable ? (
-        /* The OAuth flow is not built yet — the model, policy and gate ship
-           first so this whole surface can be exercised with the gate dormant.
-           This becomes a link to /api/social/{platform}/authorize. */
-        <Button kind="secondary" size="s" disabled title="Coming soon">
-          Connect
+        <Button
+          kind="secondary"
+          size="s"
+          icon="ph-link-simple"
+          onClick={() => connect.mutate()}
+          disabled={connect.isPending}
+        >
+          {connect.isPending ? "Opening…" : "Connect"}
         </Button>
       ) : (
         <span className="text-[13px] leading-5 text-slate-400">Not available yet</span>
@@ -81,8 +103,38 @@ function PlatformRow({ platform }: { platform: SocialPlatform }) {
   );
 }
 
+const CONNECT_ERRORS: Record<string, string> = {
+  cancelled: "Connection cancelled",
+  expired: "That connection link expired — please try again",
+  scope: "Please allow every permission on the platform's screen, including access to your video list",
+  failed: "Could not complete the connection — please try again",
+  unavailable: "That platform is not available yet",
+};
+
 export function ConnectAccounts() {
   const { data } = useSocialConnections();
+  const queryClient = useQueryClient();
+
+  /* The OAuth callback lands on the API and redirects back here with the
+     outcome in the query string — it cannot toast from the API origin. Report
+     it once, then strip the param so a refresh does not repeat it. */
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const connected = params.get("connected");
+    const failed = params.get("connect_error");
+    if (!connected && !failed) return;
+    if (connected) {
+      toast.success(`${connected[0].toUpperCase()}${connected.slice(1)} connected`);
+      queryClient.invalidateQueries({ queryKey: ["social-connections"] });
+    } else if (failed) {
+      toast.error(CONNECT_ERRORS[failed] ?? CONNECT_ERRORS.failed);
+    }
+    params.delete("connected");
+    params.delete("connect_error");
+    const qs = params.toString();
+    window.history.replaceState({}, "", window.location.pathname + (qs ? `?${qs}` : ""));
+  }, [queryClient]);
+
   if (!data) return null;
   return (
     <div className="flex flex-col">

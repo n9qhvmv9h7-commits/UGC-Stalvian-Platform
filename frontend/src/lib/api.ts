@@ -503,6 +503,14 @@ export interface SocialConnections {
 export const fetchSocialConnections = () =>
   api.get<SocialConnections>("/api/social/connections").then((r) => r.data);
 
+/** Returns the platform's consent URL — the app navigates to it. A full
+    navigation, not a popup: creators live in in-app browsers where window.open
+    is unreliable. */
+export const startSocialConnect = (platform: string) =>
+  api
+    .post<{ authorize_url: string }>(`/api/social/${platform}/authorize`)
+    .then((r) => r.data.authorize_url);
+
 export const disconnectSocial = (platform: string) =>
   api.delete(`/api/social/${platform}`).then((r) => r.data);
 
