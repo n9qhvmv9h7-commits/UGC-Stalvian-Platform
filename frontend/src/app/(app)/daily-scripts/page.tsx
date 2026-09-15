@@ -5,7 +5,6 @@ import { ScriptFeedPage } from "@/components/script-feed";
 export default function DailyScriptsPage() {
   return (
     <ScriptFeedPage
-      group="daily"
       basePath="/daily-scripts"
       eyebrow="Daily Scripts"
       headline="Fresh scripts, every day."

@@ -20,22 +20,14 @@ from app.services.panel_client import PanelError
 
 router = APIRouter(prefix="/api/feed", tags=["feed"])
 
-# key -> the Story.kind it serves. `key` is what the URL and the UI use; the
-# kind is our internal storage name (the panel calls the same feed "movers"
-# while a single row is a "mover").
-# `group` decides which tab a feed lives under: the daily news-driven feeds and
-# the retrospective "what the trade was worth" ones are different jobs, so they
-# get their own tabs rather than one long selector.
-GROUPS = {
-    "daily": "Daily Scripts",
-    "top-trades": "Top Trades",
-}
-
+# One option in the Daily Scripts selector. `kinds` is a LIST because a feed
+# the creator picks need not be one panel feed: Top Trades presents hindsight
+# and trending together, since to a creator they are one idea — the trade that
+# turned out to matter — even though the panel generates them separately.
 FEED_TYPES: list[dict] = [
     {
         "key": "breaking",
-        "kind": "breaking",
-        "group": "daily",
+        "kinds": ["breaking"],
         "label": "Breaking News",
         "description": (
             "Fresh market stories with the insider angle: how the politicians and funds "
@@ -44,8 +36,7 @@ FEED_TYPES: list[dict] = [
     },
     {
         "key": "movers",
-        "kind": "mover",
-        "group": "daily",
+        "kinds": ["mover"],
         "label": "Movers",
         "description": (
             "A stock that moved a lot, and the politician or hedge fund in Stalvian's "
@@ -53,23 +44,12 @@ FEED_TYPES: list[dict] = [
         ),
     },
     {
-        "key": "hindsight",
-        "kind": "hindsight",
-        "group": "top-trades",
-        "label": "Hindsight",
+        "key": "top-trades",
+        "kinds": ["hindsight", "trending"],
+        "label": "Top Trades",
         "description": (
-            "What a trade turned out to be worth. The position, the price it was "
-            "disclosed at, and what it is worth now."
-        ),
-    },
-    {
-        "key": "trending",
-        "kind": "trending",
-        "group": "top-trades",
-        "label": "Trending",
-        "description": (
-            "The trades people are talking about right now, and who in Stalvian's "
-            "albums is holding them."
+            "The trades worth talking about: what a disclosed position turned out to be "
+            "worth, and the ones people are watching right now."
         ),
     },
 ]
@@ -81,9 +61,13 @@ _refresh_lock = asyncio.Lock()
 _last_refresh: float = 0.0
 
 
-async def _feed(db: AsyncSession, creator: Creator, kind: str, page: int, limit: int) -> dict:
+async def _feed(
+    db: AsyncSession, creator: Creator, kinds: list[str], page: int, limit: int
+) -> dict:
+    """Newest-first across every kind this feed covers, so a feed backed by two
+    panel feeds reads as one interleaved list rather than two blocks."""
     base = select(Story).where(
-        Story.kind == kind, Story.creator_id.is_(None), Story.status == "active"
+        Story.kind.in_(kinds), Story.creator_id.is_(None), Story.status == "active"
     )
     rows = (
         (
@@ -118,7 +102,6 @@ async def _feed(db: AsyncSession, creator: Creator, kind: str, page: int, limit:
 
 @router.get("/types")
 async def feed_types(
-    group: str | None = Query(default=None, description="Limit to one tab's feeds"),
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
@@ -150,9 +133,9 @@ async def feed_types(
                 *live,
                 or_(
                     *[
-                        and_(Story.kind == t["kind"], Story.created_at > seen[t["key"]])
+                        and_(Story.kind.in_(t["kinds"]), Story.created_at > seen[t["key"]])
                         if t["key"] in seen
-                        else Story.kind == t["kind"]
+                        else Story.kind.in_(t["kinds"])
                         for t in FEED_TYPES
                     ]
                 ),
@@ -166,14 +149,12 @@ async def feed_types(
         "items": [
             {
                 "key": t["key"],
-                "group": t["group"],
                 "label": t["label"],
                 "description": t["description"],
-                "count": counts.get(t["kind"], 0),
-                "unread": unread.get(t["kind"], 0),
+                "count": sum(counts.get(k, 0) for k in t["kinds"]),
+                "unread": sum(unread.get(k, 0) for k in t["kinds"]),
             }
             for t in FEED_TYPES
-            if group is None or t["group"] == group
         ]
     }
 
@@ -237,4 +218,4 @@ async def feed(
     feed_type = _BY_KEY.get(key)
     if feed_type is None:
         raise HTTPException(status_code=404, detail=f"Unknown feed: {key}")
-    return await _feed(db, creator, feed_type["kind"], page, limit)
+    return await _feed(db, creator, feed_type["kinds"], page, limit)

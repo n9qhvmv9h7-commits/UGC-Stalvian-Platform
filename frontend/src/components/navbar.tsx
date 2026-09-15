@@ -8,25 +8,22 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UnreadDot } from "@/components/ui";
 import { clearToken, fetchFeedTypes, fetchMe, getToken } from "@/lib/api";
 
-/* Unread per script tab. One request for every feed, split by group, so the
-   sidebar costs a single query no matter how many tabs there are. */
-function useUnreadByGroup(): Record<string, number> {
+/* Total unread across every Daily Scripts feed. Same query key the page uses,
+   so opening a feed updates the sidebar without a second request. */
+function useUnreadScripts(): number {
   const { data } = useQuery({
     queryKey: ["feed-types"],
-    queryFn: () => fetchFeedTypes(),
+    queryFn: fetchFeedTypes,
     enabled: !!getToken(),
   });
-  const totals: Record<string, number> = {};
-  for (const t of data ?? []) totals[t.group] = (totals[t.group] ?? 0) + t.unread;
-  return totals;
+  return (data ?? []).reduce((total, t) => total + t.unread, 0);
 }
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "ph-squares-four" },
   { href: "/albums", label: "Albums", icon: "ph-stack" },
   { href: "/album-stories", label: "Album Stories", icon: "ph-vinyl-record" },
-  { href: "/daily-scripts", label: "Daily Scripts", icon: "ph-lightning", group: "daily" },
-  { href: "/top-trades", label: "Top Trades", icon: "ph-trophy", group: "top-trades" },
+  { href: "/daily-scripts", label: "Daily Scripts", icon: "ph-lightning" },
   { href: "/my-videos", label: "My Videos", icon: "ph-video-camera" },
   { href: "/earnings", label: "Earnings", icon: "ph-currency-eur" },
 ];
@@ -40,7 +37,7 @@ export function Sidebar() {
     queryFn: fetchMe,
     enabled: !!getToken(),
   });
-  const unread = useUnreadByGroup();
+  const unread = useUnreadScripts();
 
   const logout = () => {
     clearToken();
@@ -71,9 +68,9 @@ export function Sidebar() {
             >
               <i className={`ph ${link.icon} text-[20px]`} />
               {link.label}
-              {link.group && (
+              {link.href === "/daily-scripts" && (
                 <span className="ml-auto">
-                  <UnreadDot count={unread[link.group] ?? 0} onDark />
+                  <UnreadDot count={unread} onDark />
                 </span>
               )}
             </Link>
@@ -123,7 +120,7 @@ export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const unread = useUnreadByGroup();
+  const unread = useUnreadScripts();
 
   return (
     <div className="lg:hidden">
@@ -162,7 +159,7 @@ export function MobileNav() {
             }`}
           >
             {link.label}
-            {link.group && <UnreadDot count={unread[link.group] ?? 0} />}
+            {link.href === "/daily-scripts" && <UnreadDot count={unread} />}
           </Link>
         ))}
       </div>

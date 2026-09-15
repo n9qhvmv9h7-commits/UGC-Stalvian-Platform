@@ -1,13 +1,12 @@
 "use client";
 
-/* One tab of script feeds, selected by `group`.
+/* Daily Scripts — every shoot-ready feed the panel publishes, under one tab.
 
-   Daily Scripts and Top Trades are the same machinery over different feeds, so
-   they share this component: the server owns which feeds exist
-   (GET /api/feed/types?group=), and the page is deliberately generic about
-   them — heading, blurb and empty state read the same whichever feed is
-   selected. Adding a feed to either tab is one entry on the server and nothing
-   here; adding a whole new TAB is a four-line page like the two that use this.
+   The server owns the list of feeds (GET /api/feed/types) and the page is
+   deliberately generic about them — heading, blurb and empty state read the
+   same whichever feed is selected — so a new feed needs NO frontend change at
+   all, not even a copy entry. A feed can also be backed by several panel feeds
+   at once: Top Trades is hindsight and trending interleaved.
 
    The active feed lives in `?type=`, so a creator can link someone straight to
    one and the browser's back button steps between them. */
@@ -20,8 +19,6 @@ import { Button, Dropdown, EmptyState, Eyebrow, Spinner, UnreadDot } from "@/com
 import { ScriptCard } from "@/components/script-card";
 
 export interface ScriptFeedProps {
-  /** Server-side feed group — decides which feeds this tab offers. */
-  group: string;
   /** Route this tab lives at, for the ?type= links. */
   basePath: string;
   eyebrow: string;
@@ -29,15 +26,12 @@ export interface ScriptFeedProps {
   blurb: string;
 }
 
-function ScriptFeed({ group, basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
+function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
   const router = useRouter();
   const params = useSearchParams();
   const queryClient = useQueryClient();
 
-  const { data: types } = useQuery({
-    queryKey: ["feed-types", group],
-    queryFn: () => fetchFeedTypes(group),
-  });
+  const { data: types } = useQuery({ queryKey: ["feed-types"], queryFn: fetchFeedTypes });
 
   // Fall back to the first feed the server offers rather than a hardcoded key:
   // the set of feeds is the server's to decide.
