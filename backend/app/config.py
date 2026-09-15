@@ -39,11 +39,13 @@ class Settings(BaseSettings):
     PAYOUT_CAP_CENTS: int = 25000
 
     # Client referrals. Every creator has a referral code that new Stalvian
-    # clients enter during onboarding; the creator then earns a share of every
-    # fee those clients pay, for as long as they stay clients. The share is in
-    # basis points (2500 = 25%). Changing it only affects fees recorded after
-    # the change — each fee event stores the commission computed at the time.
+    # clients enter during onboarding; the creator then earns a share of the
+    # fees that client pays for one year from their FIRST trade. The share is
+    # in basis points (2500 = 25%). Changing either value only affects fees
+    # recorded after the change — each fee event stores the commission computed
+    # at the time, so what a creator already earned is never rewritten.
     REFERRAL_COMMISSION_BPS: int = 2500
+    REFERRAL_COMMISSION_DAYS: int = 365
     # Static key the Stalvian product sends as X-API-Key when it validates a
     # code, attributes a new client, or reports a fee (see
     # REFERRAL_API_REQUIREMENTS.md). Unset -> those endpoints return 503; the

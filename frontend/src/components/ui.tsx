@@ -4,7 +4,14 @@
    Buttons are mostly square (L=4px, M=8px, S=pill). Serif is display-only.
    Icons are Phosphor via the CDN web font (<i className="ph ph-..." />). */
 
-import { ButtonHTMLAttributes, InputHTMLAttributes, SelectHTMLAttributes } from "react";
+import {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  SelectHTMLAttributes,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 type ButtonKind = "primary" | "secondary" | "primary-on-ink" | "secondary-on-ink";
 type ButtonSize = "l" | "m" | "s";
@@ -134,6 +141,91 @@ export function SelectField({
         <i className="ph ph-caret-down text-[18px] text-slate-500" />
       </div>
     </div>
+  );
+}
+
+/* A small menu button: the trigger shows the current choice, the panel lists
+   the rest. Used where a segmented control would be too wide for the options
+   it holds. */
+export function Dropdown<T extends string | number>({
+  value,
+  options,
+  onChange,
+  icon,
+}: {
+  value: T;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+  icon?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const current = options.find((o) => o.value === value);
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex h-9 cursor-pointer items-center gap-2 rounded-full bg-bone-100 px-4 text-[13px] font-medium leading-4 text-ink hover:bg-bone-200"
+      >
+        {icon && <i className={`ph ${icon} text-[16px] text-slate-500`} />}
+        {current?.label ?? String(value)}
+        <i className="ph ph-caret-down text-[14px] text-slate-500" />
+      </button>
+      {open && (
+        <div className="absolute right-0 z-20 mt-2 min-w-[160px] overflow-hidden rounded-[8px] border border-bone-200 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(1,5,16,0.3)]">
+          {options.map((o) => (
+            <button
+              key={String(o.value)}
+              type="button"
+              onClick={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+              className={`flex w-full cursor-pointer items-center justify-between gap-4 px-4 py-2 text-left text-[14px] leading-5 hover:bg-bone-100 ${
+                o.value === value ? "font-medium text-ink" : "text-slate-500"
+              }`}
+            >
+              {o.label}
+              {o.value === value && <i className="ph ph-check text-[14px]" />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* Unread count. Deliberately the one red thing in the app — it is the only
+   signal that asks a creator to go somewhere. Caps at 99+ so a backfill of a
+   thousand scripts cannot stretch the sidebar. */
+export function UnreadDot({ count, onDark = false }: { count: number; onDark?: boolean }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      className={`inline-flex h-5 min-w-[20px] items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-4 text-white ${
+        onDark ? "bg-red-500" : "bg-red-600"
+      }`}
+      aria-label={`${count} unread`}
+    >
+      {count > 99 ? "99+" : count}
+    </span>
   );
 }
 

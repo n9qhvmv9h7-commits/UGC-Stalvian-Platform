@@ -85,9 +85,9 @@ def canonical_key(url: str, platform: str) -> str:
     return f"{platform}:{host}{parsed.path.rstrip('/')}"
 
 
-# Creators must submit within this many days of posting — the submission date
-# is the earning-window proxy, so pre-aged videos must not monetize instantly.
-MAX_SUBMIT_AGE_DAYS = 3
+# Re-exported so submit-path callers keep importing it from here, but the rule
+# itself lives with the rest of the pay formula.
+from app.payout import MAX_SUBMIT_AGE_DAYS  # noqa: E402,F401
 
 
 async def fetch_youtube_stats(url: str) -> dict | None:

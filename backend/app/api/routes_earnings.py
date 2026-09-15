@@ -1,5 +1,7 @@
 """Earnings: transparent formula, live balance, payout history, daily chart."""
-from fastapi import APIRouter, Depends, Query
+from datetime import date, datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,14 +22,40 @@ async def get_formula():
     return formula_description()
 
 
+# A chart is drawn one bar per day, so an unbounded range is just a way to ask
+# for an unreadable chart and a slow query.
+MAX_RANGE_DAYS = 1095  # three years
+
+
 @router.get("/daily")
 async def daily_earnings(
-    days: int = Query(default=30, ge=7, le=365),
+    days: int = Query(default=30, ge=1, le=MAX_RANGE_DAYS),
+    start: date | None = Query(default=None, description="First day, inclusive (YYYY-MM-DD)"),
+    end: date | None = Query(default=None, description="Last day, inclusive; defaults to today"),
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
     """Earnings attributed per day: for each verified video, the payout delta
-    produced by that day's view growth (from ViewSnapshot history)."""
+    produced by that day's view growth (from ViewSnapshot history), plus the
+    referral commission dated that day.
+
+    Either pass `days` for a trailing window, or `start`/`end` for an explicit
+    range — the date picker sends the latter."""
+    span, last_day = days, None
+    if start is not None or end is not None:
+        # Nothing can be earned in the future, so an end past today is a clamp,
+        # not an error — it just means "up to now".
+        today = datetime.now(timezone.utc).date()
+        last_day = min(end or today, today)
+        first_day = start if start is not None else last_day - timedelta(days=days - 1)
+        if first_day > last_day:
+            raise HTTPException(status_code=400, detail="start must be on or before end")
+        span = (last_day - first_day).days + 1
+        if span > MAX_RANGE_DAYS:
+            raise HTTPException(
+                status_code=400, detail=f"Range is longer than {MAX_RANGE_DAYS} days"
+            )
+
     videos = (
         (
             await db.execute(
@@ -40,8 +68,8 @@ async def daily_earnings(
         .scalars()
         .all()
     )
-    metrics = await daily_metrics_db(db, videos, days)
-    commission = await daily_commission(db, [creator.id], days)
+    metrics = await daily_metrics_db(db, videos, span, last_day)
+    commission = await daily_commission(db, [creator.id], span, last_day)
     return {
         "days": [
             {

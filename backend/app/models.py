@@ -121,6 +121,24 @@ class PanelCache(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class FeedRead(Base):
+    """How far a creator has read one Daily Scripts feed.
+
+    Unread is "arrived since you last looked", so it compares against
+    Story.created_at — when WE stored it, not when the panel published it.
+    A backfilled story that is old but new to us still counts as unread.
+    No row means the creator has never opened that feed: everything is unread.
+    """
+
+    __tablename__ = "feed_reads"
+    __table_args__ = (UniqueConstraint("creator_id", "feed_key", name="uq_feed_read"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creators.id"), index=True)
+    feed_key: Mapped[str] = mapped_column(String(32))
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ViewSnapshot(Base):
     """Point-in-time view count of a video — the history behind the daily
     earnings chart. Written whenever a video's view count changes."""

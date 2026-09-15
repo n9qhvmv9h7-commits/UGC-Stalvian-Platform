@@ -13,13 +13,14 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchDailyEarnings, type DailyEarnings } from "@/lib/api";
 import { formatEuros } from "@/lib/format";
 import { DailyBarChart } from "@/components/bar-chart";
-
-const HORIZONS = [
-  { value: 7, label: "7 days" },
-  { value: 30, label: "30 days" },
-  { value: 90, label: "90 days" },
-  { value: 365, label: "1 year" },
-];
+import { Dropdown } from "@/components/ui";
+import {
+  DateRangePicker,
+  lastNDays,
+  rangeLabel,
+  toISODate,
+  type DateRange,
+} from "@/components/date-range";
 
 /* Which payout stream the chart is showing. The API returns all three numbers
    per day, so switching re-reads the loaded response — it never refetches. */
@@ -36,44 +37,20 @@ const STREAMS: {
   { value: "trades", label: "Trades", day: (d) => d.commission_cents, total: (t) => t.commission_cents },
 ];
 
-/* The segmented pill control used for both chart filters. */
-export function Pills<T extends string | number>({
-  value,
-  onChange,
-  options,
-}: {
-  value: T;
-  onChange: (v: T) => void;
-  options: { value: T; label: string }[];
-}) {
-  return (
-    <div className="flex gap-1 rounded-full bg-bone-100 p-1">
-      {options.map((o) => (
-        <button
-          key={String(o.value)}
-          onClick={() => onChange(o.value)}
-          className={`cursor-pointer rounded-full px-4 py-1.5 text-[13px] font-medium leading-4 ${
-            value === o.value ? "bg-ink text-white" : "text-slate-500 hover:text-ink"
-          }`}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function EarningsChartCard({ defaultHorizon = 30 }: { defaultHorizon?: number }) {
-  const [horizon, setHorizon] = useState(defaultHorizon);
+export function EarningsChartCard({ defaultDays = 30 }: { defaultDays?: number }) {
+  const [range, setRange] = useState<DateRange>(() => lastNDays(defaultDays));
   const [stream, setStream] = useState<Stream>("all");
+  // ISO strings, not Date objects: the query key has to be value-comparable,
+  // and they are exactly what the request sends.
+  const from = toISODate(range.start);
+  const to = toISODate(range.end);
   const { data: daily } = useQuery({
-    queryKey: ["earnings-daily", horizon],
-    queryFn: () => fetchDailyEarnings(horizon),
-    placeholderData: (prev) => prev, // keep bars while a new horizon loads
+    queryKey: ["earnings-daily", from, to],
+    queryFn: () => fetchDailyEarnings({ start: from, end: to }),
+    placeholderData: (prev) => prev, // keep bars while a new range loads
   });
 
   const active = STREAMS.find((s) => s.value === stream)!;
-  const horizonLabel = HORIZONS.find((h) => h.value === horizon)?.label;
 
   return (
     <div className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
@@ -84,8 +61,8 @@ export function EarningsChartCard({ defaultHorizon = 30 }: { defaultHorizon?: nu
             {daily ? (
               <>
                 <span className="font-medium text-ink">{formatEuros(active.total(daily))}</span>{" "}
-                {stream === "views" ? "from views" : stream === "trades" ? "from trades" : "earned"} in
-                the last {horizonLabel}
+                {stream === "views" ? "from views" : stream === "trades" ? "from trades" : "earned"}{" "}
+                · {rangeLabel(range)}
                 {stream === "all" && daily.total_cents > 0 && (
                   <span className="text-slate-400">
                     {" "}· {formatEuros(daily.views_cents)} views ·{" "}
@@ -99,8 +76,13 @@ export function EarningsChartCard({ defaultHorizon = 30 }: { defaultHorizon?: nu
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Pills value={stream} onChange={setStream} options={STREAMS} />
-          <Pills value={horizon} onChange={setHorizon} options={HORIZONS} />
+          <Dropdown
+            value={stream}
+            onChange={setStream}
+            options={STREAMS.map((s) => ({ value: s.value, label: s.label }))}
+            icon="ph-funnel"
+          />
+          <DateRangePicker value={range} onChange={setRange} />
         </div>
       </div>
       {daily && (

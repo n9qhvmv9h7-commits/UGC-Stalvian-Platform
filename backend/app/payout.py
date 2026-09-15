@@ -16,6 +16,11 @@ from app.config import settings
 # (submission date is the proxy); after that the video's earnings lock in.
 EARNING_WINDOW_DAYS = 10
 
+# Because the submission date is that proxy, a link has to arrive soon after
+# posting — otherwise an old video would monetize its whole lifetime at once.
+# Enforced on submit (app/services/view_tracker.py), checkable for YouTube.
+MAX_SUBMIT_AGE_DAYS = 3
+
 
 def video_payout_cents(views: int) -> int:
     if views < settings.PAYOUT_MIN_VIEWS:
@@ -36,6 +41,7 @@ def formula_description() -> dict:
     return {
         "currency": "EUR",
         "window_days": EARNING_WINDOW_DAYS,
+        "submit_within_days": MAX_SUBMIT_AGE_DAYS,
         # Second income stream: share of every fee paid by referred clients.
         "commission_bps": settings.REFERRAL_COMMISSION_BPS,
         "commission_pct": settings.REFERRAL_COMMISSION_BPS / 100,

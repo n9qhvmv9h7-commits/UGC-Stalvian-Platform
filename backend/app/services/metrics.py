@@ -134,7 +134,9 @@ def daily_metrics(
 
 
 async def daily_metrics_db(
-    db: AsyncSession, videos: Sequence[VideoSubmission], days: int
+    db: AsyncSession, videos: Sequence[VideoSubmission], days: int, today: date | None = None
 ) -> dict[date, DayMetrics]:
+    """`today` anchors the last day of the window (default: actually today), so
+    a caller can ask for an arbitrary [start, end] range as (span, end)."""
     snaps = await fetch_snapshots(db, [v.id for v in videos])
-    return daily_metrics(videos, snaps, days)
+    return daily_metrics(videos, snaps, days, today)

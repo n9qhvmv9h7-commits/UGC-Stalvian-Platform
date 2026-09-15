@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { fetchBreaking, fetchEarnings, fetchMe, fetchMovers, fetchMyVideos } from "@/lib/api";
+import { fetchEarnings, fetchFeed, fetchMe, fetchMyVideos } from "@/lib/api";
 import { formatEuros, formatViews, timeAgo } from "@/lib/format";
 import { Badge, Button, Eyebrow, StatCard } from "@/components/ui";
 import { EarningsChartCard } from "@/components/earnings-chart";
@@ -12,8 +12,8 @@ export default function DashboardPage() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
   const { data: earnings } = useQuery({ queryKey: ["earnings"], queryFn: fetchEarnings });
   const { data: videos } = useQuery({ queryKey: ["videos"], queryFn: fetchMyVideos });
-  const { data: breaking } = useQuery({ queryKey: ["breaking", 1], queryFn: () => fetchBreaking(1) });
-  const { data: movers } = useQuery({ queryKey: ["movers", 1], queryFn: () => fetchMovers(1) });
+  const { data: breaking } = useQuery({ queryKey: ["feed", "breaking"], queryFn: () => fetchFeed("breaking") });
+  const { data: movers } = useQuery({ queryKey: ["feed", "movers"], queryFn: () => fetchFeed("movers") });
 
   const firstName = me?.name?.split(" ")[0] || "there";
 
@@ -83,7 +83,7 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between">
             <div className="text-[18px] font-medium leading-6 text-ink">Breaking News</div>
-            <Link href="/breaking-news" className="text-[14px] leading-5 text-blue">
+            <Link href="/daily-scripts?type=breaking" className="text-[14px] leading-5 text-blue">
               View all
             </Link>
           </div>
@@ -91,7 +91,7 @@ export default function DashboardPage() {
             {(breaking?.items || []).slice(0, 3).map((story) => (
               <Link
                 key={story.id}
-                href="/breaking-news"
+                href="/daily-scripts?type=breaking"
                 className="dashed-card flex flex-col gap-2 p-5 hover:bg-bone-100"
               >
                 <span className="text-[12px] leading-4 text-slate-400">
@@ -110,7 +110,7 @@ export default function DashboardPage() {
         <div className="flex flex-col gap-5">
           <div className="flex items-center justify-between">
             <div className="text-[18px] font-medium leading-6 text-ink">Movers</div>
-            <Link href="/movers" className="text-[14px] leading-5 text-blue">
+            <Link href="/daily-scripts?type=movers" className="text-[14px] leading-5 text-blue">
               View all
             </Link>
           </div>
@@ -118,7 +118,7 @@ export default function DashboardPage() {
             {(movers?.items || []).slice(0, 3).map((story) => (
               <Link
                 key={story.id}
-                href="/movers"
+                href="/daily-scripts?type=movers"
                 className="dashed-card flex flex-col gap-2 p-5 hover:bg-bone-100"
               >
                 <div className="flex items-center gap-2">

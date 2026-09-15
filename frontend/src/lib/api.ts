@@ -145,6 +145,8 @@ export interface Video {
 export interface PayoutFormula {
   currency: string;
   window_days: number;
+  /** A link must arrive within this many days of posting. */
+  submit_within_days: number;
   min_views: number;
   base_cents: number;
   tier1_cents_per_1k: number;
@@ -446,11 +448,25 @@ export interface FeedPage {
   limit: number;
 }
 
-export const fetchBreaking = (page = 1) =>
-  api.get<FeedPage>("/api/feed/breaking", { params: { page } }).then((r) => r.data);
+/** One Daily Scripts feed. The server owns the list (GET /api/feed/types), so
+    a new feed reaches the app without a frontend release. */
+export interface FeedType {
+  key: string;
+  label: string;
+  description: string;
+  count: number;
+  /** Stories stored since this creator last opened the feed. */
+  unread: number;
+}
 
-export const fetchMovers = (page = 1) =>
-  api.get<FeedPage>("/api/feed/movers", { params: { page } }).then((r) => r.data);
+export const fetchFeedTypes = () =>
+  api.get<{ items: FeedType[] }>("/api/feed/types").then((r) => r.data.items);
+
+export const markFeedSeen = (key: string) =>
+  api.post(`/api/feed/${key}/seen`).then((r) => r.data);
+
+export const fetchFeed = (key: string, page = 1) =>
+  api.get<FeedPage>(`/api/feed/${key}`, { params: { page } }).then((r) => r.data);
 
 export const refreshFeeds = () => api.post("/api/feed/refresh", {}, { timeout: 120_000 }).then((r) => r.data);
 
@@ -472,8 +488,10 @@ export interface DailyEarnings {
   total_cents: number;
 }
 
-export const fetchDailyEarnings = (days: number) =>
-  api.get<DailyEarnings>("/api/earnings/daily", { params: { days } }).then((r) => r.data);
+/* Either a trailing window (`days`) or an explicit inclusive range
+   (`start`/`end`, YYYY-MM-DD). The date picker sends the latter. */
+export const fetchDailyEarnings = (params: { days?: number; start?: string; end?: string }) =>
+  api.get<DailyEarnings>("/api/earnings/daily", { params }).then((r) => r.data);
 
 export const fetchFormula = () => api.get<PayoutFormula>("/api/earnings/formula").then((r) => r.data);
 
@@ -488,12 +506,18 @@ export interface ReferredClient {
   fees_cents: number;
   commission_cents: number;
   last_fee_at: string | null;
+  /** Null until their first trade — the commission clock starts there. */
+  first_fee_at: string | null;
+  earning_until: string | null;
+  window_open: boolean;
 }
 
 export interface MyReferrals {
   code: string;
   commission_bps: number;
   commission_pct: number;
+  /** How long a client earns, counted from their first trade. */
+  commission_days: number;
   signup_url: string | null;
   fees_cents: number;
   commission_cents: number;

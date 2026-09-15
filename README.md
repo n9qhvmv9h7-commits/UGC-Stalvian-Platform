@@ -39,7 +39,7 @@ Formula lives in `backend/app/payout.py`; the frontend reads it from `GET /api/e
 Every creator has a **referral code** (`POL-7K3M` style, generated on invite and
 backfilled on startup for older accounts). New Stalvian clients enter it during
 the product's onboarding; the creator then earns **25% of every fee that client
-pays**, for as long as they stay a client — no window, no cap. Views pay and fee
+pays** for **one year from that client's first trade**. Views pay and fee
 share land in the same balance and are paid out together.
 
 - The Stalvian product reports sign-ups and fees over an API-key surface

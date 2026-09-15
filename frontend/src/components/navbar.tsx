@@ -5,14 +5,25 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { clearToken, fetchMe, getToken } from "@/lib/api";
+import { UnreadDot } from "@/components/ui";
+import { clearToken, fetchFeedTypes, fetchMe, getToken } from "@/lib/api";
+
+/* Total unread across every Daily Scripts feed. Same query key the page
+   uses, so opening a feed updates the sidebar without a second request. */
+function useUnreadScripts(): number {
+  const { data } = useQuery({
+    queryKey: ["feed-types"],
+    queryFn: fetchFeedTypes,
+    enabled: !!getToken(),
+  });
+  return (data ?? []).reduce((total, t) => total + t.unread, 0);
+}
 
 const LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "ph-squares-four" },
   { href: "/albums", label: "Albums", icon: "ph-stack" },
   { href: "/album-stories", label: "Album Stories", icon: "ph-vinyl-record" },
-  { href: "/breaking-news", label: "Breaking News", icon: "ph-lightning" },
-  { href: "/movers", label: "Movers", icon: "ph-chart-line-up" },
+  { href: "/daily-scripts", label: "Daily Scripts", icon: "ph-lightning" },
   { href: "/my-videos", label: "My Videos", icon: "ph-video-camera" },
   { href: "/earnings", label: "Earnings", icon: "ph-currency-eur" },
 ];
@@ -26,6 +37,7 @@ export function Sidebar() {
     queryFn: fetchMe,
     enabled: !!getToken(),
   });
+  const unread = useUnreadScripts();
 
   const logout = () => {
     clearToken();
@@ -56,6 +68,11 @@ export function Sidebar() {
             >
               <i className={`ph ${link.icon} text-[20px]`} />
               {link.label}
+              {link.href === "/daily-scripts" && (
+                <span className="ml-auto">
+                  <UnreadDot count={unread} onDark />
+                </span>
+              )}
             </Link>
           );
         })}
@@ -103,6 +120,7 @@ export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const unread = useUnreadScripts();
 
   return (
     <div className="lg:hidden">
@@ -136,11 +154,12 @@ export function MobileNav() {
           <Link
             key={link.href}
             href={link.href}
-            className={`whitespace-nowrap rounded-full px-4 py-2 text-[13px] font-medium ${
+            className={`flex items-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-[13px] font-medium ${
               pathname.startsWith(link.href) ? "bg-ink text-white" : "text-slate-500"
             }`}
           >
             {link.label}
+            {link.href === "/daily-scripts" && <UnreadDot count={unread} />}
           </Link>
         ))}
       </div>

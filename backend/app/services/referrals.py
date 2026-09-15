@@ -6,8 +6,10 @@ endpoints in routes_referrals.py, or an admin by hand) who signed up and every
 fee they pay. The creator earns REFERRAL_COMMISSION_BPS of each fee — computed
 and stored per event, so history never moves when the rate does.
 
-Commission has no earning window and no cap: it lasts as long as the client
-keeps paying fees.
+Commission runs for REFERRAL_COMMISSION_DAYS from the client's FIRST trade,
+not from signup. Fees after that window are still recorded (they are real
+revenue and belong in the client's history) but carry a zero share, so every
+total stays a plain SUM over commission_cents.
 """
 import secrets
 from collections import defaultdict
@@ -31,6 +33,31 @@ def commission_cents(fee_cents: int, bps: int | None = None) -> int:
     """Creator's share of one fee, rounded half-up to the cent."""
     rate = settings.REFERRAL_COMMISSION_BPS if bps is None else bps
     return (fee_cents * rate + 5000) // 10000
+
+
+async def commission_window(
+    db: AsyncSession, client: ReferredClient, including: datetime | None = None
+) -> tuple[datetime, datetime] | None:
+    """(first trade, last day that still earns) for a client, or None if they
+    have never traded.
+
+    The clock starts at the client's FIRST fee, not at signup: someone who
+    opens an account and trades six months later still gets the creator a full
+    year. `including` lets a fee being written right now act as that first
+    trade.
+    """
+    earliest = (
+        await db.execute(
+            select(func.min(FeeEvent.occurred_at)).where(FeeEvent.client_id == client.id)
+        )
+    ).scalar()
+    if isinstance(earliest, str):  # SQLite hands min() back as text
+        earliest = datetime.fromisoformat(earliest)
+    candidates = [d for d in (naive(earliest), naive(including)) if d is not None]
+    if not candidates:
+        return None
+    first = min(candidates)
+    return first, first + timedelta(days=settings.REFERRAL_COMMISSION_DAYS)
 
 
 def normalize_code(value: str) -> str:
@@ -164,17 +191,23 @@ async def record_fee(
         if existing is not None:
             return existing, False
     bps = settings.REFERRAL_COMMISSION_BPS
+    when = occurred_at or datetime.now(timezone.utc)
+    # A fee outside the client's one-year window is still recorded — it is real
+    # revenue and belongs in their fee history — but it pays the creator
+    # nothing. Storing the zero keeps every sum a plain SUM over this column.
+    window = await commission_window(db, client, including=when)
+    earns = window is None or naive(when) <= window[1]
     event = FeeEvent(
         client_id=client.id,
         creator_id=client.creator_id,
         external_ref=ref,
         fee_cents=fee_cents,
         commission_bps=bps,
-        commission_cents=commission_cents(fee_cents, bps),
+        commission_cents=commission_cents(fee_cents, bps) if earns else 0,
         currency=(currency or "EUR").upper()[:3],
         note=(note or "").strip()[:255] or None,
         source=source,
-        occurred_at=occurred_at or datetime.now(timezone.utc),
+        occurred_at=when,
     )
     db.add(event)
     try:
@@ -243,9 +276,19 @@ async def daily_commission(
     return series
 
 
-def client_view(client: ReferredClient, fees_cents: int, commission: int, last_fee: datetime | None) -> dict:
+def client_view(
+    client: ReferredClient,
+    fees_cents: int,
+    commission: int,
+    last_fee: datetime | None,
+    first_fee: datetime | None = None,
+) -> dict:
     """What a creator sees about one of their clients: a label, never the
-    identity behind it."""
+    identity behind it, plus how long this client still earns."""
+    first = naive(first_fee)
+    earning_until = (
+        first + timedelta(days=settings.REFERRAL_COMMISSION_DAYS) if first else None
+    )
     return {
         "id": client.id,
         "label": client.label or f"Client #{client.id}",
@@ -254,6 +297,10 @@ def client_view(client: ReferredClient, fees_cents: int, commission: int, last_f
         "fees_cents": fees_cents,
         "commission_cents": commission,
         "last_fee_at": last_fee.isoformat() if last_fee else None,
+        # None until they place their first trade — the clock has not started.
+        "first_fee_at": first.isoformat() if first else None,
+        "earning_until": earning_until.isoformat() if earning_until else None,
+        "window_open": earning_until is None or datetime.utcnow() <= earning_until,
     }
 
 
@@ -280,18 +327,22 @@ async def clients_with_totals(
                 func.coalesce(func.sum(FeeEvent.fee_cents), 0),
                 func.coalesce(func.sum(FeeEvent.commission_cents), 0),
                 func.max(FeeEvent.occurred_at),
+                func.min(FeeEvent.occurred_at),
             )
             .where(FeeEvent.client_id.in_([c.id for c in clients]))
             .group_by(FeeEvent.client_id)
         )
     ).all()
-    by_client = {cid: (int(f), int(c), last) for cid, f, c, last in rows}
+    by_client = {cid: (int(f), int(c), last, first) for cid, f, c, last, first in rows}
     out = []
     for client in clients:
-        fees, commission, last = by_client.get(client.id, (0, 0, None))
-        if isinstance(last, str):  # SQLite may hand max() back as text
+        fees, commission, last, first = by_client.get(client.id, (0, 0, None, None))
+        # SQLite may hand min()/max() back as text
+        if isinstance(last, str):
             last = datetime.fromisoformat(last)
-        out.append(client_view(client, fees, commission, last))
+        if isinstance(first, str):
+            first = datetime.fromisoformat(first)
+        out.append(client_view(client, fees, commission, last, first))
     return out
 
 
@@ -299,5 +350,6 @@ def program_description() -> dict:
     return {
         "commission_bps": settings.REFERRAL_COMMISSION_BPS,
         "commission_pct": settings.REFERRAL_COMMISSION_BPS / 100,
+        "commission_days": settings.REFERRAL_COMMISSION_DAYS,
         "signup_url": settings.REFERRAL_SIGNUP_URL or None,
     }

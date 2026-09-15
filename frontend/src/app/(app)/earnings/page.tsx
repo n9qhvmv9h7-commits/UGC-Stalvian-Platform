@@ -14,12 +14,11 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchEarnings, fetchMyReferrals, type PayoutFormula } from "@/lib/api";
-import { formatDate, formatEuros, formatViews } from "@/lib/format";
-import { Badge, Button, Eyebrow, StatCard } from "@/components/ui";
+import { fetchEarnings, fetchMyReferrals, fetchMyVideos, type PayoutFormula } from "@/lib/api";
+import { PLATFORM_ICONS, formatDate, formatEuros, formatViews } from "@/lib/format";
+import { Badge, Eyebrow, StatCard } from "@/components/ui";
 import { EarningsChartCard } from "@/components/earnings-chart";
 import { Modal } from "@/components/modal";
-import { ReferralCode } from "@/components/referral-code";
 
 function payoutFor(views: number, f: PayoutFormula): number {
   if (views < f.min_views) return 0;
@@ -30,29 +29,68 @@ function payoutFor(views: number, f: PayoutFormula): number {
   return Math.min(f.base_cents + tier1 + tier2, f.cap_cents);
 }
 
+/* One row: the section's name on the left and its total on the right. The big
+   serif taglines that used to sit here were prose on a page of numbers, and
+   every stat card drew its own rule underneath — together they made a wall of
+   lines with nothing to anchor. The dashed card around the section now carries
+   the separation, so this needs no rule of its own. */
+/* Styled like the chart's own controls, so every actionable pill on this page
+   looks the same. */
+function ExplainButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex h-9 cursor-pointer items-center gap-2 rounded-full bg-bone-100 px-4 text-[13px] font-medium leading-4 text-ink hover:bg-bone-200"
+    >
+      <i className="ph ph-calculator text-[16px] text-slate-500" />
+      How pay is calculated
+    </button>
+  );
+}
+
+type Rule = { icon: string; term: string; body: string };
+
+function RuleList({ rules, columns = 1 }: { rules: Rule[]; columns?: 1 | 2 }) {
+  return (
+    <div className={`grid grid-cols-1 gap-5 ${columns === 2 ? "sm:grid-cols-2" : ""}`}>
+      {rules.map((row) => (
+        <div key={row.term} className="flex gap-4">
+          <i className={`ph ${row.icon} mt-0.5 shrink-0 text-[20px] text-slate-400`} />
+          <div className="flex flex-col gap-1">
+            <div className="text-[15px] font-medium leading-6 text-ink">{row.term}</div>
+            <p className="text-[14px] leading-5 text-slate-500">{row.body}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function StreamHeader({
   icon,
   eyebrow,
-  title,
-  amount,
-  amountLabel,
+  onExplain,
 }: {
   icon: string;
   eyebrow: string;
-  title: string;
-  amount: string;
-  amountLabel: string;
+  onExplain: () => void;
 }) {
   return (
-    <div className="flex flex-col gap-6 border-t-2 border-ink pt-6">
+    <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
       <Eyebrow icon={icon}>{eyebrow}</Eyebrow>
-      <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-4">
-        <h2 className="display-sm max-w-[560px] text-ink">{title}</h2>
-        <div className="flex flex-col gap-1 sm:text-right">
-          <div className="display-md text-ink">{amount}</div>
-          <div className="text-[14px] leading-5 text-slate-500">{amountLabel}</div>
-        </div>
-      </div>
+      <ExplainButton onClick={onExplain} />
+    </div>
+  );
+}
+
+/* A borderless figure. StatCard's top rule is right for the page's headline
+   numbers; inside a section it just adds another line. */
+function Stat({ value, label }: { value: React.ReactNode; label: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="font-serif text-[30px] leading-9 text-ink">{value}</div>
+      <div className="text-[14px] leading-5 text-slate-500">{label}</div>
     </div>
   );
 }
@@ -60,8 +98,12 @@ function StreamHeader({
 export default function EarningsPage() {
   const { data } = useQuery({ queryKey: ["earnings"], queryFn: fetchEarnings });
   const { data: referrals } = useQuery({ queryKey: ["my-referrals"], queryFn: fetchMyReferrals });
+  const { data: videos } = useQuery({ queryKey: ["videos"], queryFn: fetchMyVideos });
   const [simViews, setSimViews] = useState(25000);
-  const [explainerOpen, setExplainerOpen] = useState(false);
+  /* Which stream's rules are open. Each section explains only itself — a
+     creator asking "why did this video pay that?" should not have to read
+     the referral rules to find out. */
+  const [explainer, setExplainer] = useState<"views" | "trades" | null>(null);
 
   const simPayout = useMemo(
     () => (data ? payoutFor(simViews, data.formula) : 0),
@@ -73,18 +115,13 @@ export default function EarningsPage() {
 
   return (
     <div className="flex flex-col gap-12">
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div className="flex flex-col gap-6">
-          <Eyebrow icon="ph-currency-eur">Earnings</Eyebrow>
-          <h1 className="display-md max-w-[720px] text-ink">
-            Two ways to earn.
-            <br />
-            No surprises.
-          </h1>
-        </div>
-        <Button kind="secondary" size="m" icon="ph-calculator" onClick={() => setExplainerOpen(true)}>
-          How pay is calculated
-        </Button>
+      <div className="flex flex-col gap-6">
+        <Eyebrow icon="ph-currency-eur">Earnings</Eyebrow>
+        <h1 className="display-md max-w-[720px] text-ink">
+          Two ways to earn.
+          <br />
+          No surprises.
+        </h1>
       </div>
 
       <EarningsChartCard />
@@ -97,125 +134,172 @@ export default function EarningsPage() {
       </div>
 
       {/* ---------------- Stream 1: views ---------------- */}
-      <section className="flex flex-col gap-8">
+      <section className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
         <StreamHeader
           icon="ph-play-circle"
           eyebrow="Earnings from Views"
-          title="Every video pays on the views it earns."
-          amount={data ? formatEuros(data.views_earned_cents) : "—"}
-          amountLabel="From video views, all-time"
+          onExplain={() => setExplainer("views")}
         />
-        <div className="flex flex-col gap-10 sm:flex-row">
-          <StatCard
-            value={data ? formatViews(data.total_views) : "—"}
-            description="Views that count toward pay"
+        {/* Boxed: a tinted panel separates the three figures from the video
+            table below without drawing another rule across the page. */}
+        <div className="grid grid-cols-2 gap-6 rounded-[8px] bg-bone-100 p-6 sm:grid-cols-4">
+          <Stat
+            value={data ? formatEuros(data.views_earned_cents) : "—"}
+            label="Earned from views, all-time"
           />
-          <StatCard value={data ? String(data.verified_videos) : "—"} description="Verified videos" />
-          <StatCard
-            value={data ? String(data.pending_videos) : "—"}
-            description="Videos awaiting review"
-          />
+          <Stat value={data ? formatViews(data.total_views) : "—"} label="Views counting toward pay" />
+          <Stat value={data ? String(data.verified_videos) : "—"} label="Verified videos" />
+          <Stat value={data ? String(data.pending_videos) : "—"} label="Awaiting review" />
         </div>
+
+        {/* Per-video breakdown — the section total, itemized. `eligible_views`
+            (not raw views) is what the money is computed from, so that is the
+            column shown: anything else would not add up to the payout beside it. */}
+        {videos && videos.items.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left">
+              <thead>
+                <tr className="border-b border-ink">
+                  <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">Video</th>
+                  <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">Posted</th>
+                  <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">
+                    Views counting
+                  </th>
+                  <th className="py-3 text-right text-[13px] font-medium leading-5 text-slate-500">
+                    Earned
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {videos.items.map((v) => (
+                  <tr key={v.id} className="border-b border-bone-200">
+                    <td className="max-w-[320px] py-3 pr-4">
+                      <div className="flex items-center gap-2">
+                        <i
+                          className={`ph ${PLATFORM_ICONS[v.platform] || "ph-video"} shrink-0 text-[18px] text-slate-400`}
+                        />
+                        <a
+                          href={v.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="truncate text-[15px] leading-5 text-ink hover:underline"
+                        >
+                          {v.title || v.url}
+                        </a>
+                        {v.status !== "verified" && (
+                          <Badge tone={v.status === "pending" ? "warn" : "neutral"}>{v.status}</Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap py-3 pr-4 text-[14px] leading-5 text-slate-500">
+                      {formatDate(v.created_at)}
+                    </td>
+                    <td className="py-3 pr-4 text-right text-[14px] leading-5 text-slate-500">
+                      {formatViews(v.eligible_views)}
+                    </td>
+                    <td className="py-3 text-right font-serif text-[18px] leading-6 text-ink">
+                      {formatEuros(v.payout_cents)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {videos && videos.items.length === 0 && (
+          <p className="text-[14px] leading-5 text-slate-500">
+            No videos yet — submit your first link in My Videos.
+          </p>
+        )}
       </section>
 
       {/* ---------------- Stream 2: trades ---------------- */}
-      <section className="flex flex-col gap-8">
+      <section className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
         <StreamHeader
           icon="ph-handshake"
           eyebrow="Earnings from Trades"
-          title={`Your clients trade. You keep ${pct} of the fees.`}
-          amount={data ? formatEuros(data.commission_earned_cents) : "—"}
-          amountLabel="From client trades, all-time"
+          onExplain={() => setExplainer("trades")}
         />
 
-        <div className="flex flex-col gap-8 rounded-[8px] bg-ink p-8 lg:p-10">
-          <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.2fr_1fr]">
-            <div className="flex flex-col gap-6">
-              <Eyebrow icon="ph-ticket" onDark>
-                Your referral code
-              </Eyebrow>
-              <div className="flex flex-wrap items-center gap-4">
-                <ReferralCode code={referrals?.code ?? data?.referral.code} size="l" onDark />
-                {referrals?.signup_url && (
-                  <a
-                    href={referrals.signup_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 text-[14px] font-medium leading-5 text-white/70 hover:text-white"
-                  >
-                    Where clients sign up <i className="ph ph-arrow-up-right" />
-                  </a>
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-8 sm:flex-row lg:flex-col lg:gap-6">
-              <StatCard
-                onDark
-                value={referrals ? String(referrals.active_clients) : "—"}
-                description={
-                  referrals && referrals.clients.length !== referrals.active_clients
-                    ? `Active clients (${referrals.clients.length} all-time)`
-                    : "Active clients"
-                }
-              />
-              <StatCard
-                onDark
-                value={referrals ? formatEuros(referrals.fees_cents) : "—"}
-                description="Fees your clients have paid"
-              />
-              <StatCard
-                onDark
-                value={referrals ? formatEuros(referrals.commission_cents) : "—"}
-                description="Your share of those fees"
-              />
-            </div>
-          </div>
-
-          {referrals && referrals.clients.length > 0 && (
-            <div className="overflow-x-auto border-t border-ink-500 pt-6">
-              <table className="w-full min-w-[560px] text-left">
-                <thead>
-                  <tr className="border-b border-white/20">
-                    <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-300">Client</th>
-                    <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-300">Joined</th>
-                    <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-300">Fees paid</th>
-                    <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-300">Your share</th>
-                    <th className="py-3 text-[13px] font-medium leading-5 text-slate-300">Last fee</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {referrals.clients.map((c) => (
-                    <tr key={c.id} className="border-b border-white/10">
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2 text-[15px] leading-5 text-white">
-                          {c.label}
-                          {c.status === "churned" && <Badge tone="neutral">left</Badge>}
-                        </div>
-                      </td>
-                      <td className="py-3 pr-4 text-[14px] leading-5 text-slate-300">
-                        {formatDate(c.attributed_at)}
-                      </td>
-                      <td className="py-3 pr-4 text-right text-[14px] leading-5 text-slate-300">
-                        {formatEuros(c.fees_cents)}
-                      </td>
-                      <td className="py-3 pr-4 text-right font-serif text-[18px] leading-6 text-white">
-                        {formatEuros(c.commission_cents)}
-                      </td>
-                      <td className="py-3 text-[13px] leading-5 text-slate-400">
-                        {c.last_fee_at ? formatDate(c.last_fee_at) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {referrals && referrals.clients.length === 0 && (
-            <p className="border-t border-ink-500 pt-6 text-[14px] leading-5 text-slate-400">
-              No clients yet. Share your code — the first person who signs up with it appears here.
-            </p>
-          )}
+        {/* Same shape as the Views section: boxed figures, then the itemized
+            list that adds up to them — clients here instead of videos. */}
+        <div className="grid grid-cols-2 gap-6 rounded-[8px] bg-bone-100 p-6 sm:grid-cols-3">
+          <Stat
+            value={referrals ? String(referrals.active_clients) : "—"}
+            label={
+              referrals && referrals.clients.length !== referrals.active_clients
+                ? `Active clients (${referrals.clients.length} all-time)`
+                : "Active clients"
+            }
+          />
+          <Stat
+            value={referrals ? formatEuros(referrals.fees_cents) : "—"}
+            label="Fees your clients have paid"
+          />
+          <Stat
+            value={referrals ? formatEuros(referrals.commission_cents) : "—"}
+            label="Your share of those fees"
+          />
         </div>
+
+        {referrals && referrals.clients.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[620px] text-left">
+              <thead>
+                <tr className="border-b border-ink">
+                  <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">Client</th>
+                  <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">Joined</th>
+                  <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">
+                    Fees paid
+                  </th>
+                  <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">
+                    Your share
+                  </th>
+                  <th className="py-3 text-[13px] font-medium leading-5 text-slate-500">
+                    Earning until
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {referrals.clients.map((c) => (
+                  <tr key={c.id} className="border-b border-bone-200">
+                    <td className="py-3 pr-4">
+                      <div className="flex items-center gap-2">
+                        <i className="ph ph-user-circle shrink-0 text-[18px] text-slate-400" />
+                        <span className="text-[15px] leading-5 text-ink">{c.label}</span>
+                        {c.status === "churned" && <Badge tone="neutral">left</Badge>}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap py-3 pr-4 text-[14px] leading-5 text-slate-500">
+                      {formatDate(c.attributed_at)}
+                    </td>
+                    <td className="py-3 pr-4 text-right text-[14px] leading-5 text-slate-500">
+                      {formatEuros(c.fees_cents)}
+                    </td>
+                    <td className="py-3 pr-4 text-right font-serif text-[18px] leading-6 text-ink">
+                      {formatEuros(c.commission_cents)}
+                    </td>
+                    <td className="whitespace-nowrap py-3 text-[13px] leading-5">
+                      {c.earning_until ? (
+                        <span className={c.window_open ? "text-slate-400" : "text-slate-300 line-through"}>
+                          {formatDate(c.earning_until)}
+                        </span>
+                      ) : (
+                        <span className="text-slate-300">no trades yet</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {referrals && referrals.clients.length === 0 && (
+          <p className="text-[14px] leading-5 text-slate-500">
+            No clients yet — share your code and the first person who signs up with it appears
+            here.
+          </p>
+        )}
       </section>
 
       {/* Payout history — one balance, so one history across both streams */}
@@ -248,36 +332,69 @@ export default function EarningsPage() {
         )}
       </div>
 
-      {/* The rules + simulator: read once, then out of the way */}
-      <Modal open={explainerOpen} onClose={() => setExplainerOpen(false)} title="How pay is calculated">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          <div className="flex flex-col gap-6">
-            <h3 className="display-xs text-ink">Every video</h3>
-            <div className="flex flex-col gap-4">
-              {/* prose derives from the live formula so config changes can't make it lie */}
-              {(data
-                ? [
-                    { icon: "ph-flag", text: `A video starts earning once it passes ${formatViews(data.formula.min_views)} views.` },
-                    { icon: "ph-timer", text: `Views count for the first ${data.formula.window_days} days after posting — then the video's earnings lock in.` },
-                    { icon: "ph-currency-eur", text: `Base pay: ${formatEuros(data.formula.base_cents)} at ${formatViews(data.formula.min_views)} views — guaranteed.` },
-                    { icon: "ph-trend-up", text: `Growth: + ${formatEuros(data.formula.tier1_cents_per_1k)} for every extra 1.000 views, up to ${formatViews(data.formula.tier1_up_to_views)} views.` },
-                    { icon: "ph-rocket-launch", text: `Scale: + ${formatEuros(data.formula.tier2_cents_per_1k)} per 1.000 views beyond ${formatViews(data.formula.tier1_up_to_views)}.` },
-                    { icon: "ph-shield-check", text: `Cap: ${formatEuros(data.formula.cap_cents)} per video.` },
-                    { icon: "ph-handshake", text: `Plus ${pct} of every fee your referred clients pay when they trade — no window, no cap.` },
-                  ]
-                : []
-              ).map((row) => (
-                <div key={row.text} className="flex items-center gap-4 text-[15px] leading-6 text-ink">
-                  <i className={`ph ${row.icon} shrink-0 text-[20px]`} />
-                  <span>{row.text}</span>
-                </div>
-              ))}
-            </div>
-            <p className="text-[14px] leading-5 text-slate-500">
-              Views are verified before payout — automatically for YouTube, by the Stalvian team
-              for TikTok and Instagram. Keep your videos live: deleting a posted video is a
-              strike, and two strikes end the partnership.
-            </p>
+      {/* Two separate explainers, one per stream. Every figure comes from the
+          live formula endpoint, so a config change can never leave this text
+          saying something the backend no longer does. */}
+      <Modal
+        open={explainer === "views"}
+        onClose={() => setExplainer(null)}
+        title="How video pay is calculated"
+      >
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.3fr_1fr]">
+          <div className="flex flex-col gap-5">
+            <RuleList
+              rules={
+                data
+                  ? [
+                      {
+                        icon: "ph-flag",
+                        term: `Nothing pays below ${formatViews(data.formula.min_views)} views`,
+                        body: `A video earns €0,00 until it crosses ${formatViews(data.formula.min_views)} views. There is no partial pay under the threshold — the moment it crosses, the full base kicks in.`,
+                      },
+                      {
+                        icon: "ph-currency-eur",
+                        term: `Base: ${formatEuros(data.formula.base_cents)}`,
+                        body: `Paid in full the moment the video passes ${formatViews(data.formula.min_views)} views, whatever happens afterwards.`,
+                      },
+                      {
+                        icon: "ph-trend-up",
+                        term: `Growth: +${formatEuros(data.formula.tier1_cents_per_1k)} per 1.000 views`,
+                        body: `Every additional 1.000 views above the threshold adds ${formatEuros(data.formula.tier1_cents_per_1k)}, up to ${formatViews(data.formula.tier1_up_to_views)} views. Partial thousands do not count — the counter moves in whole 1.000s.`,
+                      },
+                      {
+                        icon: "ph-rocket-launch",
+                        term: `Scale: +${formatEuros(data.formula.tier2_cents_per_1k)} per 1.000 views`,
+                        body: `Past ${formatViews(data.formula.tier1_up_to_views)} views the rate halves, but it never stops — a video that keeps running keeps adding.`,
+                      },
+                      {
+                        icon: "ph-shield-check",
+                        term: `Cap: ${formatEuros(data.formula.cap_cents)} per video`,
+                        body: `One video cannot earn more than this, no matter how far it travels. The cap is per video, not per month — ten capped videos pay ten times the cap.`,
+                      },
+                      {
+                        icon: "ph-timer",
+                        term: `Only the first ${data.formula.window_days} days count`,
+                        body: `Views are counted from the day you submit the link. On day ${data.formula.window_days} the number freezes and that video's pay is final — later views are real reach, but they do not add money.`,
+                      },
+                      {
+                        icon: "ph-paper-plane-tilt",
+                        term: `Submit within ${data.formula.submit_within_days} days of posting`,
+                        body: `Because the clock starts at submission, a link posted long ago would otherwise cash in its whole history at once. Links older than ${data.formula.submit_within_days} days are rejected.`,
+                      },
+                      {
+                        icon: "ph-seal-check",
+                        term: "Views have to be verified",
+                        body: "YouTube is checked automatically against the platform. TikTok and Instagram have no public numbers, so the Stalvian team verifies those by hand — the video sits as “pending” until then, and pending videos pay nothing yet.",
+                      },
+                      {
+                        icon: "ph-warning",
+                        term: "Keep your videos up",
+                        body: "Deleting a video after posting is a strike, and it stops earning the moment it comes down. Two strikes end the partnership.",
+                      },
+                    ]
+                  : []
+              }
+            />
           </div>
 
           <div className="flex flex-col gap-6 self-start rounded-[8px] bg-cream p-6">
@@ -316,6 +433,53 @@ export default function EarningsPage() {
             )}
           </div>
         </div>
+      </Modal>
+
+      <Modal
+        open={explainer === "trades"}
+        onClose={() => setExplainer(null)}
+        title="How trade pay is calculated"
+      >
+        <RuleList
+          columns={2}
+          rules={[
+            {
+              icon: "ph-ticket",
+              term: "A client is someone who used your code",
+              body: "They enter it while opening their Stalvian account. That one step ties them to you permanently — there is nothing to renew and no link to keep alive.",
+            },
+            {
+              icon: "ph-percent",
+              term: `You keep ${pct} of their fees`,
+              body: `Every fee a client pays inside their year pays you ${pct} of it. Your share is worked out and stored at the moment the fee happens, so a later change to the rate never rewrites what you already earned.`,
+            },
+            {
+              icon: "ph-hourglass",
+              term: `One year from their first trade`,
+              body: `The clock starts when a client first trades, not when they sign up — someone who opens an account and trades months later still earns you a full year. After ${referrals ? Math.round(referrals.commission_days / 365) : 1} year their fees stop paying you.`,
+            },
+            {
+              icon: "ph-infinity",
+              term: "No cap inside that year",
+              body: "Unlike video pay there is no ceiling: a client who trades heavily for twelve months pays you on every one of those fees.",
+            },
+            {
+              icon: "ph-user-minus",
+              term: "If a client leaves, you keep what they paid",
+              body: "They are marked “left” and stop generating new fees, but everything they already paid you stays in your balance. The same is true when their year runs out.",
+            },
+            {
+              icon: "ph-eye-slash",
+              term: "You never see who they are",
+              body: "Clients appear under a masked label such as m***@gmail.com. You can see what they paid and what you earned, never their identity.",
+            },
+            {
+              icon: "ph-wallet",
+              term: "Paid from the same balance",
+              body: "Your share of client fees lands in the same balance as your video pay, and the Stalvian team pays it out monthly.",
+            },
+          ]}
+        />
       </Modal>
     </div>
   );
