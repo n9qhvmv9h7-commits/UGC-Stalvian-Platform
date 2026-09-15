@@ -61,7 +61,7 @@ def _migrate(conn):
 
 
 async def _bootstrap_admin() -> None:
-    """Create the first admin when the database holds none.
+    """Create the first admin when the database holds none — or reset one.
 
     Access is invite-only: there is no signup endpoint, and POST
     /api/admin/creators requires an existing admin. A fresh production database
@@ -74,6 +74,36 @@ async def _bootstrap_admin() -> None:
     if not (settings.BOOTSTRAP_ADMIN_EMAIL and settings.BOOTSTRAP_ADMIN_PASSWORD):
         return
     email = settings.BOOTSTRAP_ADMIN_EMAIL.lower().strip()
+
+    if settings.BOOTSTRAP_ADMIN_RESET:
+        # Explicit recovery for a lost admin password. Skips every guard below
+        # on purpose: the point is to overwrite an account that already exists.
+        async with async_session() as db:
+            creator = (
+                await db.execute(select(Creator).where(Creator.email == email))
+            ).scalar_one_or_none()
+            if creator is None:
+                creator = Creator(
+                    email=email,
+                    password_hash=hash_password(settings.BOOTSTRAP_ADMIN_PASSWORD),
+                    name=(settings.BOOTSTRAP_ADMIN_NAME or email.split("@")[0]).strip(),
+                    status="approved",
+                    is_admin=True,
+                )
+                db.add(creator)
+            else:
+                creator.password_hash = hash_password(settings.BOOTSTRAP_ADMIN_PASSWORD)
+                # A recovered admin is no use if the account is also suspended.
+                creator.is_admin = True
+                creator.status = "approved"
+            await db.commit()
+        logging.warning(
+            "BOOTSTRAP_ADMIN_RESET is set: password for %s was reset on boot. "
+            "Clear BOOTSTRAP_ADMIN_RESET now — it re-applies on every restart.",
+            email,
+        )
+        return
+
     async with async_session() as db:
         has_admin = (
             await db.execute(select(Creator.id).where(Creator.is_admin.is_(True)).limit(1))

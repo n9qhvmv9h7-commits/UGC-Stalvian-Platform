@@ -69,6 +69,13 @@ class Settings(BaseSettings):
     BOOTSTRAP_ADMIN_EMAIL: str = ""
     BOOTSTRAP_ADMIN_PASSWORD: str = ""
     BOOTSTRAP_ADMIN_NAME: str = "Stalvian Admin"
+    # Recovery switch. Passwords are bcrypt hashes and cannot be read back, and
+    # the bootstrap above deliberately does nothing once an admin exists — so a
+    # lost admin password would otherwise need direct database access. Set this
+    # to true WITH the two vars above and redeploy: the account is reset to that
+    # password on boot. It re-applies on every boot, so clear it immediately
+    # afterwards and change the password in Settings.
+    BOOTSTRAP_ADMIN_RESET: bool = False
 
     class Config:
         env_file = ".env"

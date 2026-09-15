@@ -180,6 +180,27 @@ The first admin comes from the `BOOTSTRAP_ADMIN_*` env vars (see
 UPDATE creators SET is_admin = true WHERE email = 'you@stalvian.com';
 ```
 
+### Locked out?
+
+Passwords are bcrypt hashes and cannot be read back, and the bootstrap above
+deliberately does nothing once an admin exists — so a forgotten admin password
+needs an explicit reset. Two ways, no database client required:
+
+1. **Env + redeploy** (no shell): on `ugc-platform-api` set `BOOTSTRAP_ADMIN_EMAIL`,
+   `BOOTSTRAP_ADMIN_PASSWORD` and `BOOTSTRAP_ADMIN_RESET=true`, then redeploy. The
+   account is reset to that password on boot (created if missing, and always left
+   admin + approved). **Clear `BOOTSTRAP_ADMIN_RESET` straight afterwards** — it
+   re-applies on every restart while it is set.
+2. **One-off script**, from the Render shell or a One-Off Job:
+
+   ```bash
+   python reset_admin_password.py you@stalvian.com            # generates one
+   python reset_admin_password.py you@stalvian.com --password 'chosen'
+   ```
+
+Either way the reset invalidates every outstanding token for that account, since
+a token is tied to the password hash.
+
 - `GET /api/admin/creators?status=pending` — creator applications with social links
 - `PATCH /api/admin/creators/{id}` — `{status: "approved" | "rejected", review_note}`
 - `GET /api/admin/videos?status=pending` — queue of TikTok/IG links to verify
