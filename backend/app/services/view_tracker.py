@@ -22,11 +22,23 @@ logger = logging.getLogger(__name__)
 # Hostname allowlists — substring matching would let evil.example/youtube.com pass.
 _PLATFORM_HOSTS = {
     "youtube": {"youtube.com", "www.youtube.com", "m.youtube.com", "youtu.be"},
-    "tiktok": {"tiktok.com", "www.tiktok.com", "vm.tiktok.com", "m.tiktok.com"},
+    "tiktok": {
+        "tiktok.com", "www.tiktok.com", "m.tiktok.com",
+        # Share-sheet short hosts. These carry no /video/<id>, so a link from
+        # one canonicalizes differently from the full URL for the same video —
+        # see _SHORT_LINK_HOSTS below.
+        "vm.tiktok.com", "vt.tiktok.com",
+    },
     "instagram": {"instagram.com", "www.instagram.com"},
 }
 
 _YT_ID = re.compile(r"^[\w-]{11}$")
+
+# TikTok serves short-link redirects differently to non-browser clients.
+_BROWSER_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/140.0 Safari/537.36"
+)
 
 
 def detect_platform(url: str) -> str:
@@ -57,8 +69,50 @@ def youtube_video_id(url: str) -> str | None:
     return None
 
 
-_IG_MEDIA = re.compile(r"^/(?:p|reel|reels|tv)/([\w-]+)")
+# Instagram serves the same media as /reel/<code>/ AND /<username>/reel/<code>/
+# (its own share sheet emits the latter). Both must reduce to one key.
+_IG_MEDIA = re.compile(r"^/(?:[\w.]+/)?(?:p|reel|reels|tv)/([\w-]+)")
 _TIKTOK_VIDEO = re.compile(r"/video/(\d+)")
+
+# Share-sheet links that hide the real video id behind a redirect. Canonicalizing
+# one of these without resolving it yields a key that cannot match the same
+# video's full URL — so the same video could be submitted, and paid, twice.
+_SHORT_LINK_HOSTS = {"vm.tiktok.com", "vt.tiktok.com"}
+
+
+def is_short_link(url: str) -> bool:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if host in _SHORT_LINK_HOSTS:
+        return True
+    # tiktok.com/t/<code> is the same thing on the main host.
+    return host.endswith("tiktok.com") and parsed.path.startswith("/t/")
+
+
+async def resolve_short_link(url: str) -> str:
+    """Follow a share-sheet link to the canonical video URL.
+
+    Returns the original URL unchanged on any failure — a submission must never
+    fail because TikTok was slow. The caller still gets a usable (if
+    unresolved) key, and the duplicate check stays best-effort rather than
+    becoming a hard dependency on a third party.
+    """
+    if not is_short_link(url):
+        return url
+    try:
+        async with httpx.AsyncClient(
+            timeout=6, follow_redirects=True, max_redirects=5
+        ) as client:
+            resp = await client.get(url, headers={"User-Agent": _BROWSER_UA})
+    except httpx.HTTPError as exc:
+        logger.warning("Could not resolve short link %s: %s", url, exc)
+        return url
+    resolved = str(resp.url)
+    # Only trust a resolution that actually landed on a video URL.
+    if _TIKTOK_VIDEO.search(urlparse(resolved).path):
+        return resolved
+    logger.warning("Short link %s did not resolve to a video URL", url)
+    return url
 
 
 def canonical_key(url: str, platform: str) -> str:

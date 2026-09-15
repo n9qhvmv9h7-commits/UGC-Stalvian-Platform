@@ -12,8 +12,9 @@ from sqlalchemy.exc import InterfaceError, OperationalError
 from app.auth import hash_password
 from app.config import settings
 from app.database import async_session, engine
-from app.models import Base, Creator, Story
+from app.models import Base, Creator, Story, VideoSubmission
 from app.services.referrals import backfill_referral_codes
+from app.services.view_tracker import canonical_key
 
 logging.basicConfig(level=logging.INFO)
 
@@ -179,6 +180,51 @@ async def _prepare_database(max_wait_seconds: int = 150) -> None:
             delay = min(delay * 2, 10.0)
 
 
+async def _backfill_canonical_keys() -> None:
+    """Recompute video identity keys whose stored value predates a parser fix.
+
+    `canonical_key` reduces every URL shape for a video to one string, and the
+    uniqueness of that string is what stops the same video being submitted —
+    and paid — twice. When the parser learns a shape it used to miss (Instagram's
+    /<user>/reel/<code>/ form, TikTok share links), rows stored under the old
+    key would never collide with a newly-submitted correct key, so the hole
+    stays open for every video already in the table.
+
+    Runs after create_all rather than inside _migrate: _migrate is sync, runs
+    before the tables are guaranteed to exist, and only handles DDL.
+    """
+    async with async_session() as db:
+        rows = (await db.execute(select(VideoSubmission))).scalars().all()
+        seen = {r.canonical_key: r.id for r in rows}
+        fixed = collisions = 0
+        for video in rows:
+            correct = canonical_key(video.url, video.platform)
+            if correct == video.canonical_key:
+                continue
+            owner = seen.get(correct)
+            if owner is not None and owner != video.id:
+                # Two rows are genuinely the same video — the double-submission
+                # this fix prevents going forward. The column is unique, so
+                # rewriting would crash the boot. Leave both and let a human
+                # decide which one earned.
+                logging.error(
+                    "Duplicate video detected while backfilling keys: rows %d and %d "
+                    "are both %s — resolve manually (one may have been paid twice)",
+                    owner, video.id, correct,
+                )
+                collisions += 1
+                continue
+            del seen[video.canonical_key]
+            seen[correct] = video.id
+            video.canonical_key = correct
+            fixed += 1
+        if fixed:
+            await db.commit()
+            logging.warning("Backfilled %d video canonical keys", fixed)
+        if collisions:
+            logging.error("%d duplicate videos need manual review", collisions)
+
+
 async def _fail_orphaned_generations() -> None:
     """Album-story generation runs as a background task, so a story left in
     `generating` belongs to a process that is gone — a deploy, a restart, a
@@ -203,6 +249,7 @@ async def _fail_orphaned_generations() -> None:
 async def lifespan(app: FastAPI):
     await _prepare_database()
     await _bootstrap_admin()
+    await _backfill_canonical_keys()
     await _fail_orphaned_generations()
     async with async_session() as db:
         await backfill_referral_codes(db)

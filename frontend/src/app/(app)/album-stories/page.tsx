@@ -8,7 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchAlbums, fetchMyStories, fetchStory, generateStory, StoryPayload } from "@/lib/api";
 import { albumImage } from "@/lib/album-images";
-import { Button, EmptyState, Eyebrow, Field, Spinner } from "@/components/ui";
+import { Button, Eyebrow, Field, Spinner } from "@/components/ui";
 import { Modal } from "@/components/modal";
 import { ScriptCard } from "@/components/script-card";
 
@@ -205,27 +205,17 @@ export default function AlbumStoriesPage() {
 
       {freshStory && <ScriptCard story={freshStory} defaultOpen />}
 
-      <div className="flex flex-col gap-5">
-        <h2 className="display-sm text-ink">Your stories</h2>
-        {mine && mine.items.length === 0 && !freshStory && !working && (
-          <EmptyState
-            icon="ph-file-dashed"
-            title="No stories yet"
-            body="Create your first script — it stays here so you can come back to it any time."
-            action={
-              <Button kind="secondary" size="m" onClick={openModal}>
-                Create New Script
-              </Button>
-            }
-          />
-        )}
-        <div className="flex flex-col gap-4">
-          {(mine?.items || [])
-            .filter((s) => s.id !== freshStory?.id && s.id !== pendingId)
-            .map((story) => (
-              <ScriptCard key={story.id} story={story} />
-            ))}
-        </div>
+      {/* Previously generated scripts, continuing straight on from the fresh
+          one. They used to sit under a "Your stories" heading, which read as a
+          separate section when it is really the same list — and left an empty
+          heading on screen right after generating, since the new script is
+          rendered above and filtered out below. */}
+      <div className="flex flex-col gap-4">
+        {(mine?.items || [])
+          .filter((s) => s.id !== freshStory?.id && s.id !== pendingId)
+          .map((story) => (
+            <ScriptCard key={story.id} story={story} />
+          ))}
       </div>
 
       {/* ---- Modal: step 1 pick album, step 2 pick angle ---- */}

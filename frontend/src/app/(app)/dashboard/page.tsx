@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { fetchEarnings, fetchFeed, fetchMe, fetchMyVideos } from "@/lib/api";
-import { formatEuros, formatViews, timeAgo } from "@/lib/format";
+import { fetchEarnings, fetchFeed, fetchMe } from "@/lib/api";
+import { formatEuros, timeAgo } from "@/lib/format";
 import { Badge, Button, Eyebrow, StatCard } from "@/components/ui";
 import { EarningsChartCard } from "@/components/earnings-chart";
 import { ReferralCode } from "@/components/referral-code";
@@ -11,7 +11,6 @@ import { ReferralCode } from "@/components/referral-code";
 export default function DashboardPage() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
   const { data: earnings } = useQuery({ queryKey: ["earnings"], queryFn: fetchEarnings });
-  const { data: videos } = useQuery({ queryKey: ["videos"], queryFn: fetchMyVideos });
   const { data: breaking } = useQuery({ queryKey: ["feed", "breaking"], queryFn: () => fetchFeed("breaking") });
   const { data: movers } = useQuery({ queryKey: ["feed", "movers"], queryFn: () => fetchFeed("movers") });
 
@@ -34,20 +33,22 @@ export default function DashboardPage() {
 
       <div className="flex flex-col gap-10 sm:flex-row">
         <StatCard
-          value={earnings ? formatEuros(earnings.balance_cents) : "—"}
-          description="Current balance, paid out monthly"
-        />
-        <StatCard
           value={earnings ? formatEuros(earnings.earned_cents) : "—"}
-          description="Earned all-time, views and client fees"
+          description="Total earned"
+        />
+        {/* This month's earnings not yet settled — balances pay out monthly, so
+            what a creator is waiting on is the month in progress. */}
+        <StatCard
+          value={earnings ? formatEuros(earnings.pending_cents) : "—"}
+          description="Pending to pay"
         />
         <StatCard
-          value={earnings ? formatViews(earnings.total_views) : "—"}
-          description="Verified views across your videos"
+          value={earnings ? String(earnings.verified_videos) : "—"}
+          description="Videos verified"
         />
         <StatCard
-          value={videos ? String(videos.items.length) : "—"}
-          description="Videos submitted for tracking"
+          value={earnings ? String(earnings.referral.clients) : "—"}
+          description="Referrals signed up"
         />
       </div>
 

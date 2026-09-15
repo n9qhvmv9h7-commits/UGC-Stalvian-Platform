@@ -33,7 +33,6 @@ export function fullScriptText(story: StoryPayload): string {
     parts.push(story.script_body);
   }
   if (story.call_to_action) parts.push(`CTA: ${story.call_to_action}`);
-  if (story.hashtags?.length) parts.push(story.hashtags.join(" "));
   return parts.join("\n\n");
 }
 
@@ -90,6 +89,11 @@ export function ScriptCard({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const [hookIdx, setHookIdx] = useState(0);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+
+  // The panel re-parses these out of the generation prompt, so blanks and
+  // duplicates both turn up; a creator should see each filing once.
+  const sources = [...new Set((story.sources ?? []).map((s) => s.trim()).filter(Boolean))];
 
   const meta: string[] = [];
   if (story.album_name) meta.push(story.album_name);
@@ -261,8 +265,29 @@ export function ScriptCard({
             </div>
           )}
 
-          {story.hashtags && story.hashtags.length > 0 && (
-            <p className="text-[14px] leading-5 text-blue">{story.hashtags.join(" ")}</p>
+          {/* Every claim in these scripts traces back to a disclosure. A creator
+              about to say it on camera should be able to see the filing first —
+              and be able to show it if anyone asks. */}
+          {sources.length > 0 && sourcesOpen && (
+            <ul className="flex flex-col gap-2 rounded-[8px] bg-bone-100 p-4">
+              {sources.map((src, i) => (
+                <li key={`${src}-${i}`} className="text-[14px] leading-5">
+                  {/^https?:\/\//.test(src) ? (
+                    <a
+                      href={src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-start gap-2 text-blue hover:underline"
+                    >
+                      <i className="ph ph-arrow-square-out mt-0.5 shrink-0 text-[16px]" />
+                      <span className="break-all">{src}</span>
+                    </a>
+                  ) : (
+                    <span className="text-slate-500">{src}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
 
           <div className="flex flex-wrap items-center gap-3 border-t border-bone-200 pt-4">
@@ -274,13 +299,14 @@ export function ScriptCard({
                 Copy Hook
               </Button>
             )}
-            {story.hashtags && story.hashtags.length > 0 && (
+            {sources.length > 0 && (
               <Button
                 kind="secondary"
                 size="s"
-                onClick={() => copy(story.hashtags!.join(" "), "Hashtags")}
+                icon={sourcesOpen ? "ph-caret-up" : "ph-file-text"}
+                onClick={() => setSourcesOpen((v) => !v)}
               >
-                Copy Hashtags
+                {sourcesOpen ? "Hide Sources" : `Check Sources (${sources.length})`}
               </Button>
             )}
             <div className="ml-auto flex items-center gap-4">

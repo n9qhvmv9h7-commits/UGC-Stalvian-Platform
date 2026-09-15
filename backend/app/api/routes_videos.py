@@ -1,7 +1,7 @@
 """Video submissions: creators drop their published video links here."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +13,7 @@ from app.services.earning_window import eligible_views_map, window_cutoff, windo
 from app.services.view_tracker import (
     MAX_SUBMIT_AGE_DAYS,
     canonical_key,
+    resolve_short_link,
     detect_platform,
     fetch_youtube_stats,
     fetch_youtube_views,
@@ -66,15 +67,25 @@ async def submit_video(
             status_code=400,
             detail="Only TikTok, Instagram, and YouTube links are supported",
         )
+    # A share-sheet link hides the video id behind a redirect, so it must be
+    # resolved BEFORE the key is computed — otherwise the same video submitted
+    # once short and once in full yields two keys, passes the check below, and
+    # is paid twice. Resolution is best-effort and returns the original on
+    # failure, so a slow TikTok never blocks a submission.
+    url = await resolve_short_link(url)
     key = canonical_key(url, platform)
 
+    # Match on the canonical key alone. It IS the video's identity, and since
+    # resolution can rewrite `url`, a pasted link could otherwise match one row
+    # by url and a different row by key — which made scalar_one_or_none() raise
+    # MultipleResultsFound and 500 the request.
     duplicate = (
         await db.execute(
-            select(VideoSubmission).where(
-                or_(VideoSubmission.url == url, VideoSubmission.canonical_key == key)
-            )
+            select(VideoSubmission)
+            .where(VideoSubmission.canonical_key == key)
+            .order_by(VideoSubmission.id)
         )
-    ).scalar_one_or_none()
+    ).scalars().first()
     if duplicate and not (
         duplicate.status == "deleted" and duplicate.creator_id == creator.id
     ):

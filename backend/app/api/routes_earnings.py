@@ -9,7 +9,7 @@ from app.auth import get_current_approved_creator
 from app.database import get_db
 from app.models import Creator, Payout, VideoSubmission
 from app.payout import formula_description, video_payout_cents
-from app.services.earning_window import eligible_views_map
+from app.services.earning_window import eligible_views_map, naive
 from app.services.metrics import daily_metrics_db
 from app.services.referrals import commission_totals, daily_commission
 
@@ -123,8 +123,29 @@ async def my_earnings(
     paid = sum(p.amount_cents for p in payouts if p.status == "paid")
     total_views = sum(eligible[v.id] for v in verified)
 
+    # "Pending to pay" is THIS MONTH's earnings that have not been settled —
+    # balances are paid out monthly, so what a creator is waiting on is the
+    # month in progress, not the all-time gap between earned and paid.
+    today = datetime.now(timezone.utc).date()
+    month_start = today.replace(day=1)
+    month_days = (today - month_start).days + 1
+    month_metrics = await daily_metrics_db(db, verified, month_days)
+    month_commission = await daily_commission(db, [creator.id], month_days)
+    month_earned = sum(m.earned_cents for m in month_metrics.values()) + sum(
+        month_commission.values()
+    )
+    month_paid = sum(
+        p.amount_cents
+        for p in payouts
+        if p.status == "paid" and naive(p.created_at) and naive(p.created_at).date() >= month_start
+    )
+    pending = max(month_earned - month_paid, 0)
+
     return {
         "earned_cents": earned,
+        # This calendar month only — see the comment above.
+        "month_earned_cents": month_earned,
+        "pending_cents": pending,
         "views_earned_cents": views_earned,
         "commission_earned_cents": referral["commission_cents"],
         "referral": {

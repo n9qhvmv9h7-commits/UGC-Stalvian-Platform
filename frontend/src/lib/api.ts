@@ -162,6 +162,10 @@ export interface PayoutFormula {
 export interface Earnings {
   /** views pay + referral commission — the one balance creators are paid on */
   earned_cents: number;
+  /** Earned in the current calendar month. */
+  month_earned_cents: number;
+  /** This month's earnings not yet settled — balances are paid monthly. */
+  pending_cents: number;
   views_earned_cents: number;
   commission_earned_cents: number;
   referral: {
