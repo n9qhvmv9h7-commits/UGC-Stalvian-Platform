@@ -15,7 +15,7 @@ import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchFeed, fetchFeedTypes, markFeedSeen } from "@/lib/api";
-import { Button, Dropdown, EmptyState, Eyebrow, Spinner, UnreadDot } from "@/components/ui";
+import { Button, Dropdown, EmptyState, Eyebrow, Spinner } from "@/components/ui";
 import { ScriptCard } from "@/components/script-card";
 
 export interface ScriptFeedProps {
@@ -108,7 +108,7 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
       )}
 
       {types && types.length > 0 && active && (
-        <div className="-mb-8 flex flex-wrap items-center gap-2">
+        <div className="-mb-8 flex">
           <Dropdown
             value={active.key}
             onChange={(key) => router.replace(`${basePath}?type=${key}`, { scroll: false })}
@@ -118,25 +118,6 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
             }))}
             icon="ph-squares-four"
           />
-          {types.some((t) => t.key !== active.key && t.unread > 0) && (
-            <div className="flex items-center gap-2 pl-1">
-              {types
-                .filter((t) => t.key !== active.key && t.unread > 0)
-                .map((t) => (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() =>
-                      router.replace(`${basePath}?type=${t.key}`, { scroll: false })
-                    }
-                    className="flex h-9 cursor-pointer items-center gap-2 rounded-full px-3 text-[13px] font-medium leading-4 text-slate-500 hover:text-ink"
-                  >
-                    {t.label}
-                    <UnreadDot count={t.unread} />
-                  </button>
-                ))}
-            </div>
-          )}
         </div>
       )}
 
