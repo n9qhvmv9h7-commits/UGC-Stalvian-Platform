@@ -119,11 +119,18 @@ async def localized_payload(db: AsyncSession, story: Story, language: str) -> di
 # on-demand album-story generation, which is inherently live).
 
 # feed name on the /api/ugc/scripts surface -> our Story.kind
-_FEED_KINDS = {"breaking": "breaking", "movers": "mover"}
+_FEED_KINDS = {
+    "breaking": "breaking",
+    "movers": "mover",
+    "hindsight": "hindsight",
+    "trending": "trending",
+}
 
 
 def _payload_fn(kind: str):
-    return _breaking_payload if kind == "breaking" else _mover_script_payload
+    """Movers carry extra chart fields; every other feed is the plain script
+    shape, which is also the right default for a feed added later."""
+    return _mover_script_payload if kind == "mover" else _breaking_payload
 
 
 async def sync_all(db: AsyncSession) -> dict:

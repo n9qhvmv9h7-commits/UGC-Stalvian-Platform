@@ -23,10 +23,19 @@ router = APIRouter(prefix="/api/feed", tags=["feed"])
 # key -> the Story.kind it serves. `key` is what the URL and the UI use; the
 # kind is our internal storage name (the panel calls the same feed "movers"
 # while a single row is a "mover").
+# `group` decides which tab a feed lives under: the daily news-driven feeds and
+# the retrospective "what the trade was worth" ones are different jobs, so they
+# get their own tabs rather than one long selector.
+GROUPS = {
+    "daily": "Daily Scripts",
+    "top-trades": "Top Trades",
+}
+
 FEED_TYPES: list[dict] = [
     {
         "key": "breaking",
         "kind": "breaking",
+        "group": "daily",
         "label": "Breaking News",
         "description": (
             "Fresh market stories with the insider angle: how the politicians and funds "
@@ -36,10 +45,31 @@ FEED_TYPES: list[dict] = [
     {
         "key": "movers",
         "kind": "mover",
+        "group": "daily",
         "label": "Movers",
         "description": (
             "A stock that moved a lot, and the politician or hedge fund in Stalvian's "
             "albums that was already in the trade. Built for the \"they knew\" hook."
+        ),
+    },
+    {
+        "key": "hindsight",
+        "kind": "hindsight",
+        "group": "top-trades",
+        "label": "Hindsight",
+        "description": (
+            "What a trade turned out to be worth. The position, the price it was "
+            "disclosed at, and what it is worth now."
+        ),
+    },
+    {
+        "key": "trending",
+        "kind": "trending",
+        "group": "top-trades",
+        "label": "Trending",
+        "description": (
+            "The trades people are talking about right now, and who in Stalvian's "
+            "albums is holding them."
         ),
     },
 ]
@@ -88,6 +118,7 @@ async def _feed(db: AsyncSession, creator: Creator, kind: str, page: int, limit:
 
 @router.get("/types")
 async def feed_types(
+    group: str | None = Query(default=None, description="Limit to one tab's feeds"),
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
@@ -135,12 +166,14 @@ async def feed_types(
         "items": [
             {
                 "key": t["key"],
+                "group": t["group"],
                 "label": t["label"],
                 "description": t["description"],
                 "count": counts.get(t["kind"], 0),
                 "unread": unread.get(t["kind"], 0),
             }
             for t in FEED_TYPES
+            if group is None or t["group"] == group
         ]
     }
 

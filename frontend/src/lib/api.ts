@@ -452,6 +452,8 @@ export interface FeedPage {
     a new feed reaches the app without a frontend release. */
 export interface FeedType {
   key: string;
+  /** Which tab this feed belongs to ("daily" | "top-trades"). */
+  group: string;
   label: string;
   description: string;
   count: number;
@@ -459,8 +461,10 @@ export interface FeedType {
   unread: number;
 }
 
-export const fetchFeedTypes = () =>
-  api.get<{ items: FeedType[] }>("/api/feed/types").then((r) => r.data.items);
+export const fetchFeedTypes = (group?: string) =>
+  api
+    .get<{ items: FeedType[] }>("/api/feed/types", { params: group ? { group } : {} })
+    .then((r) => r.data.items);
 
 export const markFeedSeen = (key: string) =>
   api.post(`/api/feed/${key}/seen`).then((r) => r.data);
