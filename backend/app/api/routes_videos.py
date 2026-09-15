@@ -7,8 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_approved_creator
 from app.database import get_db
-from app.models import Creator, Story, VideoSubmission, ViewSnapshot
+from app.models import Creator, SocialConnection, Story, VideoSubmission, ViewSnapshot
 from app.payout import video_payout_cents
+from app.services.social import policy
 from app.services.earning_window import eligible_views_map, window_cutoff, window_open
 from app.services.view_tracker import (
     MAX_SUBMIT_AGE_DAYS,
@@ -74,6 +75,27 @@ async def submit_video(
     # once short and once in full yields two keys, passes the check below, and
     # is paid twice. Resolution is best-effort and returns the original on
     # failure, so a slow TikTok never blocks a submission.
+    # Gate: per-platform, judged against the URL just pasted — not "has the
+    # creator connected anything". With YouTube open, a blanket gate would
+    # block a YouTube link from a creator who has connected nothing, which is a
+    # submission we intend to allow. A no-op while SOCIAL_CONNECT_REQUIRED is
+    # empty, which is how this ships.
+    if policy.requires_connection(platform):
+        connected = set(
+            (
+                await db.execute(
+                    select(SocialConnection.platform).where(
+                        SocialConnection.creator_id == creator.id,
+                        SocialConnection.status == "active",
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not policy.can_submit(platform, connected):
+            raise HTTPException(status_code=403, detail=policy.blocked_reason(platform))
+
     url = await resolve_short_link(url)
     key = canonical_key(url, platform)
 

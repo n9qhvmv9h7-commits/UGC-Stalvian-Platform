@@ -294,6 +294,7 @@ from app.api.routes_admin import router as admin_router
 from app.api.routes_admin_metrics import router as admin_metrics_router
 from app.api.routes_webhooks import router as webhooks_router
 from app.api.routes_referrals import router as referrals_router
+from app.api.routes_social import router as social_router
 
 app.include_router(auth_router)
 app.include_router(stories_router)
@@ -304,6 +305,7 @@ app.include_router(admin_router)
 app.include_router(admin_metrics_router)
 app.include_router(webhooks_router)
 app.include_router(referrals_router)
+app.include_router(social_router)
 
 
 @app.get("/health")

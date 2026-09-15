@@ -3,12 +3,14 @@
 /* My Videos — paste published video links; we track views and pay. */
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { deleteVideo, fetchFormula, fetchMe, fetchMyVideos, getToken, submitVideo } from "@/lib/api";
 import { formatDate, formatEuros, formatViews } from "@/lib/format";
 import { Badge, Button, EmptyState, Eyebrow, Field } from "@/components/ui";
+import { useSocialConnections } from "@/components/connect-accounts";
 
 const PLATFORM_ICONS: Record<string, string> = {
   tiktok: "ph-tiktok-logo",
@@ -40,6 +42,31 @@ function MyVideosInner() {
   const { data: formula } = useQuery({ queryKey: ["formula"], queryFn: fetchFormula });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe, enabled: !!getToken() });
   const windowDays = formula?.window_days ?? 10;
+  const { data: social } = useSocialConnections();
+
+  /* Which platform the pasted link belongs to, judged the same way the server
+     judges it — hostname, not substring, so "evil.example/tiktok.com" cannot
+     masquerade. Used only to decide whether to prompt for a connection; the
+     server still enforces. */
+  const pastedPlatform = (() => {
+    try {
+      const host = new URL(url.trim()).hostname.toLowerCase().replace(/^www\./, "");
+      if (host.endsWith("tiktok.com")) return "tiktok";
+      if (host.endsWith("instagram.com")) return "instagram";
+      if (host.endsWith("youtube.com") || host === "youtu.be") return "youtube";
+    } catch {
+      /* not a URL yet — the creator is still typing */
+    }
+    return null;
+  })();
+
+  // Per-platform and evaluated against what was actually pasted: a creator who
+  // has connected nothing can still submit a YouTube link, because YouTube
+  // needs no connection. A blanket "connect something first" wall would block
+  // a submission we intend to allow.
+  const blockedBy = pastedPlatform
+    ? social?.platforms.find((p) => p.platform === pastedPlatform && !p.can_submit)
+    : undefined;
 
   const submit = useMutation({
     mutationFn: () => submitVideo({ url, story_id: storyId }),
@@ -131,10 +158,25 @@ function MyVideosInner() {
           onChange={(e) => setUrl(e.target.value)}
           className="flex-1"
         />
-        <Button type="submit" disabled={submit.isPending || !url.trim()}>
-          {submit.isPending ? "Adding…" : "Add Video"}
-        </Button>
+        {blockedBy ? (
+          <Link href="/settings">
+            <Button type="button" icon="ph-link-simple">
+              Connect {blockedBy.label}
+            </Button>
+          </Link>
+        ) : (
+          <Button type="submit" disabled={submit.isPending || !url.trim()}>
+            {submit.isPending ? "Adding…" : "Add Video"}
+          </Button>
+        )}
       </form>
+      {blockedBy && (
+        <p className="-mt-8 flex items-start gap-2 text-[14px] leading-5 text-slate-500">
+          <i className="ph ph-info mt-0.5 shrink-0 text-[16px]" />
+          Connect your {blockedBy.label} account to submit this link — it&apos;s how we
+          confirm the video is yours and read its views.
+        </p>
+      )}
       {storyId && (
         <p className="-mt-8 text-[14px] leading-5 text-slate-500">
           <i className="ph ph-link-simple mr-1 text-[14px]" />

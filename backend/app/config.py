@@ -55,6 +55,25 @@ class Settings(BaseSettings):
     # creator's earnings page). Optional.
     REFERRAL_SIGNUP_URL: str = ""
 
+    # ---- Connected social accounts -------------------------------------
+    # Which platforms a creator must connect before submitting a video for
+    # them. Comma-separated, EMPTY by default: TikTok and Meta app review take
+    # weeks and can be rejected, so the gate ships dormant and is turned on per
+    # platform when approval lands. Manual admin verification stays forever as
+    # the fallback for creators who never connect.
+    SOCIAL_CONNECT_REQUIRED: str = ""
+    # Comma-separated Fernet keys, NEWEST FIRST. See services/crypto.py — unset
+    # means social tokens cannot be stored and the connect route returns 503.
+    SOCIAL_TOKEN_KEYS: str = ""
+    # The public origin the OAuth callback lands on. Must match what is
+    # registered with the platform, and Render hostnames are not predictable,
+    # so this is explicit rather than derived.
+    SOCIAL_OAUTH_REDIRECT_BASE: str = ""
+    TIKTOK_CLIENT_KEY: str = ""
+    TIKTOK_CLIENT_SECRET: str = ""
+    INSTAGRAM_CLIENT_ID: str = ""
+    INSTAGRAM_CLIENT_SECRET: str = ""
+
     # The two frontend origins. In production the creator app and the admin
     # panel are separate Render services with separate URLs; both must be
     # allowed through CORS. Locally one dev server on :3100 serves both, so

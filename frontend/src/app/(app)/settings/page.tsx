@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { fetchMe, setToken, updateMe } from "@/lib/api";
 import { LANGUAGES } from "@/lib/format";
 import { Button, Eyebrow, Field, SelectField } from "@/components/ui";
+import { ConnectAccounts } from "@/components/connect-accounts";
 import { ReferralCode } from "@/components/referral-code";
 
 export default function SettingsPage() {
@@ -151,7 +152,14 @@ export default function SettingsPage() {
         </div>
 
         <div className="flex flex-col gap-6">
-          <h2 className="display-xs text-ink">Social profiles</h2>
+          <h2 className="display-xs text-ink">Connected accounts</h2>
+        <p className="-mt-2 text-[14px] leading-5 text-slate-500">
+          Connecting proves a video is yours and lets us read its views automatically.
+          Until then the Stalvian team verifies views by hand.
+        </p>
+        <ConnectAccounts />
+
+        <h2 className="display-xs text-ink">Social profiles</h2>
           <Field
             label="TikTok"
             icon="ph-tiktok-logo"

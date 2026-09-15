@@ -478,6 +478,34 @@ export const fetchFeed = (key: string, page = 1) =>
 
 export const refreshFeeds = () => api.post("/api/feed/refresh", {}, { timeout: 120_000 }).then((r) => r.data);
 
+// ---------- Connected social accounts ----------
+
+export interface SocialPlatform {
+  platform: string;
+  label: string;
+  /** Whether a connection is needed to submit for this platform right now. */
+  requires_connection: boolean;
+  /** Whether an OAuth flow can be started at all (credentials configured). */
+  connectable: boolean;
+  connected: boolean;
+  status: "active" | "needs_reauth" | "revoked" | null;
+  account_handle: string | null;
+  last_synced_at: string | null;
+  can_submit: boolean;
+}
+
+export interface SocialConnections {
+  platforms: SocialPlatform[];
+  /** Platforms the creator currently cannot submit for. */
+  blocked_platforms: string[];
+}
+
+export const fetchSocialConnections = () =>
+  api.get<SocialConnections>("/api/social/connections").then((r) => r.data);
+
+export const disconnectSocial = (platform: string) =>
+  api.delete(`/api/social/${platform}`).then((r) => r.data);
+
 // ---------- Videos & earnings ----------
 
 export const submitVideo = (body: { url: string; story_id?: number | null; title?: string }) =>

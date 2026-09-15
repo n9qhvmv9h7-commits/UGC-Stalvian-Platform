@@ -119,6 +119,72 @@ class VideoSubmission(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SocialConnection(Base):
+    """A creator's authorised link to one social platform.
+
+    The point is ownership: a video that appears in the list the platform
+    returns for THIS connection is provably the creator's, which is the
+    judgement an admin currently makes by eye. View counts come along for free.
+
+    Tokens are encrypted at rest (app/services/crypto.py) — they are other
+    people's credentials, and the first real secrets this app holds. Instagram
+    has no refresh token at all (its long-lived token refreshes itself), so
+    refresh_token stays permanently NULL there by design, not by oversight.
+    """
+
+    __tablename__ = "social_connections"
+    __table_args__ = (UniqueConstraint("creator_id", "platform", name="uq_social_connection"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creators.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(16), index=True)  # tiktok | instagram
+    # The platform's own stable id for the account — the thing ownership is
+    # matched on. A handle can be changed by the creator; this cannot.
+    platform_account_id: Mapped[str] = mapped_column(String(128))
+    account_handle: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # What was ACTUALLY granted. TikTok's consent screen has per-scope toggles,
+    # so a creator can approve login and decline the video list — storing that
+    # half-connection without noticing means it silently never matches anything.
+    scopes: Mapped[str] = mapped_column(String(255), default="")
+    access_token: Mapped[str] = mapped_column(Text)  # encrypted
+    refresh_token: Mapped[str | None] = mapped_column(Text, nullable=True)  # encrypted
+    access_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    refresh_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # active | needs_reauth | revoked. needs_reauth is set ONLY on a real auth
+    # failure, never on a timeout — one network blip must not tell every
+    # creator to reconnect.
+    status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    last_error: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    consecutive_failures: Mapped[int] = mapped_column(Integer, default=0)
+    last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class OAuthState(Base):
+    """One in-flight OAuth authorisation.
+
+    The callback arrives from the platform as a top-level navigation with no
+    Authorization header and no cookie for the API origin, so the request
+    cannot identify the creator on its own — this row is what does. Minting it
+    requires the creator's own session, which is what makes it CSRF-proof:
+    an attacker cannot mint state bound to someone else.
+
+    Single-use and short-lived; the sweep runs with the sync job.
+    """
+
+    __tablename__ = "oauth_states"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    state: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creators.id"), index=True)
+    platform: Mapped[str] = mapped_column(String(16))
+    code_verifier: Mapped[str] = mapped_column(String(128))
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class PanelCache(Base):
     """Last-known copy of panel reference data (e.g. the albums catalog) so the
     UGC platform keeps serving even when the panel is unreachable."""
