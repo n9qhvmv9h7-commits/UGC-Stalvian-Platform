@@ -194,6 +194,10 @@ async def all_videos(
                 "story_id": v.story_id,
                 "status": v.status,
                 "review_note": v.review_note,
+                # Evidence, not a verdict: "foreign" means the platform says
+                # this is someone else's video. Nothing acts on it automatically.
+                "ownership_state": v.ownership_state,
+                "ownership_note": v.ownership_note,
                 "views": v.views,
                 "eligible_views": eligible.get(v.id, v.views),
                 "earning_until": window_cutoff(v).date().isoformat(),

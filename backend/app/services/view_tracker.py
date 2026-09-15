@@ -145,7 +145,12 @@ from app.payout import MAX_SUBMIT_AGE_DAYS  # noqa: E402,F401
 
 
 async def fetch_youtube_stats(url: str) -> dict | None:
-    """{views, published_at} for a YouTube URL, or None if unavailable."""
+    """{views, published_at, channel_id, channel_title} for a YouTube URL.
+
+    The channel fields cost nothing — `snippet` is already requested — and they
+    are the only ownership evidence available for YouTube, which otherwise
+    auto-populates views for any URL anyone pastes.
+    """
     if not settings.YOUTUBE_API_KEY:
         return None
     video_id = youtube_video_id(url)
@@ -177,12 +182,32 @@ async def fetch_youtube_stats(url: str) -> dict | None:
             if published_raw
             else None
         )
+        snippet = items[0].get("snippet", {})
         return {
             "views": int(items[0]["statistics"].get("viewCount", 0)),
             "published_at": published_at,
+            "channel_id": snippet.get("channelId"),
+            "channel_title": snippet.get("channelTitle"),
         }
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def channel_matches_handle(channel_title: str | None, handle: str | None) -> bool | None:
+    """Whether a video's channel plausibly belongs to this creator.
+
+    None means "no opinion" — no handle saved, or the API told us nothing — and
+    must not be shown as a mismatch. Comparison is deliberately loose: creators
+    save "@Me", "Me" or a channel URL, and a channel title is free text with
+    spaces and emoji. This is a hint for the admin queue, never an auto-reject.
+    """
+    if not channel_title or not handle:
+        return None
+    normalize = lambda v: "".join(c for c in v.lower() if c.isalnum())
+    a, b = normalize(channel_title), normalize(handle)
+    if not a or not b:
+        return None
+    return a == b or a in b or b in a
 
 
 async def fetch_youtube_views(url: str) -> int | None:

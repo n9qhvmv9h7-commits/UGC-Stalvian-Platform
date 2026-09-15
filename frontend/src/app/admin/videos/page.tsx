@@ -96,6 +96,30 @@ function VideoRow({ video }: { video: AdminVideo }) {
         </Badge>
       </div>
 
+      {/* Ownership evidence from the platform. Only shown when there is
+          something to say — "unconfirmed" is the normal case for any platform
+          we cannot ask, and dressing it up as a warning would cry wolf on
+          almost every row. */}
+      {video.ownership_state === "foreign" && (
+        <div className="flex items-start gap-3 rounded-[8px] bg-gold/15 p-4">
+          <i className="ph ph-warning shrink-0 text-[18px] text-[#8a6400]" />
+          <div className="flex flex-col gap-1">
+            <span className="text-[14px] font-medium leading-5 text-[#8a6400]">
+              This may not be their video
+            </span>
+            {video.ownership_note && (
+              <span className="text-[13px] leading-5 text-slate-500">{video.ownership_note}</span>
+            )}
+          </div>
+        </div>
+      )}
+      {video.ownership_state === "owned" && (
+        <div className="flex items-center gap-2 text-[13px] leading-5 text-green-600">
+          <i className="ph ph-seal-check text-[16px]" />
+          Posted by their own account
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
         <div className="flex flex-col gap-1">
           <span className="text-[11px] font-bold uppercase leading-4 tracking-[0.08em] text-slate-400">

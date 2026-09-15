@@ -13,6 +13,7 @@ from app.services.earning_window import eligible_views_map, window_cutoff, windo
 from app.services.view_tracker import (
     MAX_SUBMIT_AGE_DAYS,
     canonical_key,
+    channel_matches_handle,
     resolve_short_link,
     detect_platform,
     fetch_youtube_stats,
@@ -46,6 +47,7 @@ def _video_response(video: VideoSubmission, eligible: int | None = None) -> dict
         "earning_until": window_cutoff(video).date().isoformat(),
         "views_updated_at": video.views_updated_at.isoformat() if video.views_updated_at else None,
         "payout_cents": payout,
+        "ownership_state": video.ownership_state,
         "review_note": video.review_note,
         "story_id": video.story_id,
         "created_at": video.created_at.isoformat() if video.created_at else None,
@@ -123,12 +125,23 @@ async def submit_video(
         title=request.title,
     )
 
-    # YouTube views are queryable immediately, but verification (does this video
-    # belong to this creator?) stays a human decision — otherwise anyone could
-    # farm payouts by submitting other people's viral videos.
+    # YouTube views are queryable immediately, but verification stays a human
+    # decision — otherwise anyone could farm payouts by submitting other
+    # people's viral videos. The channel comparison below is evidence FOR that
+    # decision, not a substitute: it tells the admin whether the video is even
+    # on the creator's own channel, which nothing checked before.
     if platform == "youtube":
         stats = await fetch_youtube_stats(url)
         if stats is not None:
+            owned = channel_matches_handle(stats.get("channel_title"), creator.youtube_handle)
+            if owned is True:
+                video.ownership_state = "owned"
+            elif owned is False:
+                video.ownership_state = "foreign"
+                video.ownership_note = (
+                    f"Posted by \"{stats.get('channel_title')}\", "
+                    f"but the creator's YouTube handle is @{creator.youtube_handle}"
+                )
             # The submission date is the earning-window proxy: an old video
             # would monetize its lifetime views instantly.
             published_at = stats.get("published_at")

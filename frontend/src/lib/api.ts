@@ -131,6 +131,8 @@ export interface Video {
   platform: string;
   title: string | null;
   status: "pending" | "verified" | "rejected" | "removed";
+  /** What the platform says about who posted it — evidence, not a verdict. */
+  ownership_state: "unconfirmed" | "owned" | "foreign" | "disappeared";
   views: number;
   eligible_views: number;
   window_open: boolean;
@@ -241,6 +243,8 @@ export interface AdminVideo {
   story_id: number | null;
   status: string;
   review_note: string | null;
+  ownership_state: "unconfirmed" | "owned" | "foreign" | "disappeared";
+  ownership_note: string | null;
   views: number;
   eligible_views: number;
   earning_until: string;

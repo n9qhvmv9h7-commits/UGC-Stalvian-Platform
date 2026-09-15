@@ -37,6 +37,11 @@ def _migrate(conn):
             "strikes": "ALTER TABLE creators ADD COLUMN strikes INTEGER NOT NULL DEFAULT 0",
             "referral_code": "ALTER TABLE creators ADD COLUMN referral_code VARCHAR(16)",
         },
+        "video_submissions": {
+            "ownership_state": "ALTER TABLE video_submissions ADD COLUMN ownership_state "
+                               "VARCHAR(16) NOT NULL DEFAULT 'unconfirmed'",
+            "ownership_note": "ALTER TABLE video_submissions ADD COLUMN ownership_note VARCHAR(255)",
+        },
         "stories": {
             "raw": "ALTER TABLE stories ADD COLUMN raw JSON",
             "status": "ALTER TABLE stories ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'",

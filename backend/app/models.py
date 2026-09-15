@@ -106,6 +106,15 @@ class VideoSubmission(Base):
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     views: Mapped[int] = mapped_column(Integer, default=0)
     views_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Whether the platform itself says this video belongs to this creator.
+    # Deliberately separate from `status`: ownership is evidence, status is a
+    # decision. unconfirmed = no evidence either way (the default, and the only
+    # value for a platform we cannot ask). owned = the platform confirmed it.
+    # foreign = the platform says it is someone else's — a flag for the admin
+    # queue, NEVER an automatic rejection.
+    ownership_state: Mapped[str] = mapped_column(String(16), default="unconfirmed")
+    # What the platform reported, kept so an admin can see WHY it was flagged.
+    ownership_note: Mapped[str | None] = mapped_column(String(255), nullable=True)
     review_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
