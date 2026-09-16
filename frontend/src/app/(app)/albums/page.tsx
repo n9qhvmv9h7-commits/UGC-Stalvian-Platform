@@ -4,7 +4,6 @@
    returns, and current holdings. The creators' menu: pick a performer, tell
    its story. */
 
-import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -342,12 +341,6 @@ function AlbumCard({ album, kind }: { album: AlbumStats; kind: "fund" | "politic
           </div>
         )}
       </div>
-
-      <Link href="/album-stories">
-        <Button kind="secondary" size="s" icon="ph-film-slate" className="w-full">
-          Tell This Story
-        </Button>
-      </Link>
     </div>
   );
 }
