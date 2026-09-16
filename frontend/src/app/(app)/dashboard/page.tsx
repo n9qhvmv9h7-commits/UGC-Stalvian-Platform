@@ -101,7 +101,7 @@ export default function DashboardPage() {
                 <span className="text-[15px] font-medium leading-5 text-ink">{story.title}</span>
               </Link>
             ))}
-            {breaking && breaking.items.length === 0 && (
+            {breaking && !breaking.items?.length && (
               <p className="text-[15px] leading-5 text-slate-500">No stories yet — check back soon.</p>
             )}
           </div>
@@ -133,7 +133,7 @@ export default function DashboardPage() {
                 </span>
               </Link>
             ))}
-            {movers && movers.items.length === 0 && (
+            {movers && !movers.items?.length && (
               <p className="text-[15px] leading-5 text-slate-500">No stories yet — check back soon.</p>
             )}
           </div>

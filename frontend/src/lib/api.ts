@@ -27,6 +27,22 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+/* A list endpoint must always hand back something with `items`.
+
+   Axios only rejects on a non-2xx STATUS — a body it could parse still reaches
+   `.data`, so an error shape like {detail: "..."} was flowing into components
+   that did `data.items.length` and crashing the page with "Cannot read
+   properties of undefined". Normalizing here means one guard covers every
+   caller, instead of every caller needing its own. */
+function asList<T>(data: unknown): { items: T[]; page: number; limit: number } {
+  const body = (data ?? {}) as { items?: T[]; page?: number; limit?: number };
+  return {
+    items: Array.isArray(body.items) ? body.items : [],
+    page: body.page ?? 1,
+    limit: body.limit ?? 0,
+  };
+}
+
 api.interceptors.response.use(
   (resp) => resp,
   (error) => {
@@ -446,7 +462,7 @@ export const fetchStory = (id: number) =>
   api.get<StoryPayload>(`/api/stories/${id}`).then((r) => r.data);
 
 export const fetchMyStories = () =>
-  api.get<{ items: StoryPayload[] }>("/api/stories/mine").then((r) => r.data);
+  api.get("/api/stories/mine").then((r) => asList<StoryPayload>(r.data));
 
 // ---------- Feeds ----------
 
@@ -474,7 +490,7 @@ export const markFeedSeen = (key: string) =>
   api.post(`/api/feed/${key}/seen`).then((r) => r.data);
 
 export const fetchFeed = (key: string, page = 1) =>
-  api.get<FeedPage>(`/api/feed/${key}`, { params: { page } }).then((r) => r.data);
+  api.get(`/api/feed/${key}`, { params: { page } }).then((r) => asList<StoryPayload>(r.data));
 
 export const refreshFeeds = () => api.post("/api/feed/refresh", {}, { timeout: 120_000 }).then((r) => r.data);
 
@@ -519,7 +535,7 @@ export const disconnectSocial = (platform: string) =>
 export const submitVideo = (body: { url: string; story_id?: number | null; title?: string }) =>
   api.post<Video>("/api/videos", body).then((r) => r.data);
 
-export const fetchMyVideos = () => api.get<{ items: Video[] }>("/api/videos").then((r) => r.data);
+export const fetchMyVideos = () => api.get("/api/videos").then((r) => asList<Video>(r.data));
 
 export const deleteVideo = (id: number) => api.delete(`/api/videos/${id}`).then((r) => r.data);
 

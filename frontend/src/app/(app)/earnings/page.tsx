@@ -155,7 +155,7 @@ export default function EarningsPage() {
         {/* Per-video breakdown — the section total, itemized. `eligible_views`
             (not raw views) is what the money is computed from, so that is the
             column shown: anything else would not add up to the payout beside it. */}
-        {videos && videos.items.length > 0 && (
+        {videos && !!videos.items?.length && (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[620px] text-left">
               <thead>
@@ -171,7 +171,7 @@ export default function EarningsPage() {
                 </tr>
               </thead>
               <tbody>
-                {videos.items.map((v) => (
+                {(videos.items ?? []).map((v) => (
                   <tr key={v.id} className="border-b border-bone-200">
                     <td className="max-w-[320px] py-3 pr-4">
                       <div className="flex items-center gap-2">
@@ -206,7 +206,7 @@ export default function EarningsPage() {
             </table>
           </div>
         )}
-        {videos && videos.items.length === 0 && (
+        {videos && !videos.items?.length && (
           <p className="text-[14px] leading-5 text-slate-500">
             No videos yet — submit your first link in My Videos.
           </p>

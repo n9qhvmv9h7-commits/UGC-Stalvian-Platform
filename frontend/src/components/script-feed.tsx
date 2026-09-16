@@ -52,7 +52,8 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
     queryKey: ["feed", active?.key],
     queryFn: ({ pageParam }) => fetchFeed(active!.key, pageParam),
     initialPageParam: 1,
-    getNextPageParam: (last) => (last.items.length === last.limit ? last.page + 1 : undefined),
+    getNextPageParam: (last) =>
+      last.items?.length && last.items.length === last.limit ? last.page + 1 : undefined,
     enabled: !!active,
     // Scripts are pushed to the server, not pulled by the creator — so a tab
     // left open all day has to refresh itself. Coming back to the tab is the

@@ -184,7 +184,7 @@ function MyVideosInner() {
         </p>
       )}
 
-      {data && data.items.length === 0 && (
+      {data && !data.items?.length && (
         <EmptyState
           icon="ph-video-camera-slash"
           title="No videos yet"
@@ -192,7 +192,7 @@ function MyVideosInner() {
         />
       )}
 
-      {data && data.items.length > 0 && (
+      {data && !!data.items?.length && (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left">
             <thead>
@@ -206,7 +206,7 @@ function MyVideosInner() {
               </tr>
             </thead>
             <tbody>
-              {data.items.map((video) => (
+              {(data.items ?? []).map((video) => (
                 <tr key={video.id} className="border-b border-bone-200">
                   <td className="max-w-[320px] py-4 pr-4">
                     <a
