@@ -37,15 +37,7 @@ const STREAMS: {
   { value: "trades", label: "Trades", day: (d) => d.commission_cents, total: (t) => t.commission_cents },
 ];
 
-export function EarningsChartCard({
-  defaultDays = 30,
-  showStreams = true,
-}: {
-  defaultDays?: number;
-  /** Off for accounts with a single stream — a filter with one real option
-      would only invite the question of where the other one went. */
-  showStreams?: boolean;
-}) {
+export function EarningsChartCard({ defaultDays = 30 }: { defaultDays?: number }) {
   const [range, setRange] = useState<DateRange>(() => lastNDays(defaultDays));
   const [stream, setStream] = useState<Stream>("all");
   // ISO strings, not Date objects: the query key has to be value-comparable,
@@ -71,7 +63,7 @@ export function EarningsChartCard({
                 <span className="font-medium text-ink">{formatEuros(active.total(daily))}</span>{" "}
                 {stream === "views" ? "from views" : stream === "trades" ? "from trades" : "earned"}{" "}
                 · {rangeLabel(range)}
-                {showStreams && stream === "all" && daily.total_cents > 0 && (
+                {stream === "all" && daily.total_cents > 0 && (
                   <span className="text-slate-400">
                     {" "}· {formatEuros(daily.views_cents)} views ·{" "}
                     {formatEuros(daily.commission_cents)} trades
@@ -84,14 +76,12 @@ export function EarningsChartCard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {showStreams && (
-            <Dropdown
-              value={stream}
-              onChange={setStream}
-              options={STREAMS.map((s) => ({ value: s.value, label: s.label }))}
-              icon="ph-funnel"
-            />
-          )}
+          <Dropdown
+            value={stream}
+            onChange={setStream}
+            options={STREAMS.map((s) => ({ value: s.value, label: s.label }))}
+            icon="ph-funnel"
+          />
           <DateRangePicker value={range} onChange={setRange} />
         </div>
       </div>

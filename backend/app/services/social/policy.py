@@ -22,7 +22,7 @@ from app.services import crypto
 CONNECTABLE = ("tiktok", "instagram")
 
 # Platforms capitalise themselves; .title() would write "Tiktok".
-LABELS = {"tiktok": "TikTok", "instagram": "Instagram", "youtube": "YouTube"}
+LABELS = {"tiktok": "TikTok", "instagram": "Instagram", "youtube": "YouTube", "x": "X"}
 
 
 def label(platform: str) -> str:

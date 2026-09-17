@@ -30,6 +30,21 @@ _PLATFORM_HOSTS = {
         "vm.tiktok.com", "vt.tiktok.com",
     },
     "instagram": {"instagram.com", "www.instagram.com"},
+    # X threads (tweet accounts). Both domains still resolve to the same post
+    # ids; t.co is the share-sheet short host, resolved like TikTok's.
+    "x": {
+        "x.com", "www.x.com", "mobile.x.com",
+        "twitter.com", "www.twitter.com", "mobile.twitter.com",
+        "t.co",
+    },
+}
+
+# The platforms each creator surface may submit for. A tweet account submits
+# threads, a video account submits videos — never the other way round, because
+# the pay formula is the same but what an admin is verifying is not.
+SURFACE_PLATFORMS = {
+    "video": ("tiktok", "instagram", "youtube"),
+    "tweets": ("x",),
 }
 
 _YT_ID = re.compile(r"^[\w-]{11}$")
@@ -73,11 +88,15 @@ def youtube_video_id(url: str) -> str | None:
 # (its own share sheet emits the latter). Both must reduce to one key.
 _IG_MEDIA = re.compile(r"^/(?:[\w.]+/)?(?:p|reel|reels|tv)/([\w-]+)")
 _TIKTOK_VIDEO = re.compile(r"/video/(\d+)")
+# x.com/<user>/status/<id>, x.com/i/status/<id>, x.com/i/web/status/<id> — the
+# id is the post's identity; the username in the path is decorative and X
+# rewrites it freely, so it must not be part of the key.
+_X_STATUS = re.compile(r"/status(?:es)?/(\d+)")
 
 # Share-sheet links that hide the real video id behind a redirect. Canonicalizing
 # one of these without resolving it yields a key that cannot match the same
 # video's full URL — so the same video could be submitted, and paid, twice.
-_SHORT_LINK_HOSTS = {"vm.tiktok.com", "vt.tiktok.com"}
+_SHORT_LINK_HOSTS = {"vm.tiktok.com", "vt.tiktok.com", "t.co"}
 
 
 def is_short_link(url: str) -> bool:
@@ -108,8 +127,9 @@ async def resolve_short_link(url: str) -> str:
         logger.warning("Could not resolve short link %s: %s", url, exc)
         return url
     resolved = str(resp.url)
-    # Only trust a resolution that actually landed on a video URL.
-    if _TIKTOK_VIDEO.search(urlparse(resolved).path):
+    # Only trust a resolution that actually landed on a video or post URL.
+    path = urlparse(resolved).path
+    if _TIKTOK_VIDEO.search(path) or _X_STATUS.search(path):
         return resolved
     logger.warning("Short link %s did not resolve to a video URL", url)
     return url
@@ -135,6 +155,10 @@ def canonical_key(url: str, platform: str) -> str:
         match = _TIKTOK_VIDEO.search(parsed.path)
         if match:
             return f"tiktok:{match.group(1)}"
+    if platform == "x":
+        match = _X_STATUS.search(parsed.path)
+        if match:
+            return f"x:{match.group(1)}"
     host = (parsed.hostname or "").lower().removeprefix("www.").removeprefix("m.")
     return f"{platform}:{host}{parsed.path.rstrip('/')}"
 

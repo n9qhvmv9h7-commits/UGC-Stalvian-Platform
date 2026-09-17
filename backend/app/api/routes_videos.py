@@ -13,6 +13,7 @@ from app.services.social import policy
 from app.services.earning_window import eligible_views_map, window_cutoff, window_open
 from app.services.view_tracker import (
     MAX_SUBMIT_AGE_DAYS,
+    SURFACE_PLATFORMS,
     canonical_key,
     channel_matches_handle,
     resolve_short_link,
@@ -24,6 +25,12 @@ from app.services.view_tracker import (
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/videos", tags=["videos"])
+
+
+def _noun(creator: Creator) -> str:
+    """What this creator submits. The endpoint is shared, so the messages have
+    to name the thing the creator actually posted."""
+    return "post" if creator.account_type == "tweets" else "video"
 
 
 class SubmitVideoRequest(BaseModel):
@@ -61,19 +68,22 @@ async def submit_video(
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
-    # Tweet accounts have no video surface at all — no page to submit from, no
-    # pay formula for posts yet. Refused here too so the API agrees with the app.
-    if creator.account_type != "video":
-        raise HTTPException(status_code=403, detail="Video submissions are for video accounts")
     url = request.url.strip()
     if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="Please paste a full video URL")
+        raise HTTPException(status_code=400, detail="Please paste a full link")
     platform = detect_platform(url)
-    if platform == "other":
-        raise HTTPException(
-            status_code=400,
-            detail="Only TikTok, Instagram, and YouTube links are supported",
+    # Judged against the creator's surface, not a global allowlist: a tweet
+    # account submits X threads and nothing else, a video account never
+    # submits an X link. Same pay formula either way; what the admin verifies
+    # differs, and the queue must not mix them up.
+    allowed = SURFACE_PLATFORMS.get(creator.account_type, SURFACE_PLATFORMS["video"])
+    if platform not in allowed:
+        detail = (
+            "Only X links are supported — paste the link to the first tweet of your thread"
+            if creator.account_type == "tweets"
+            else "Only TikTok, Instagram, and YouTube links are supported"
         )
+        raise HTTPException(status_code=400, detail=detail)
     # A share-sheet link hides the video id behind a redirect, so it must be
     # resolved BEFORE the key is computed — otherwise the same video submitted
     # once short and once in full yields two keys, passes the check below, and
@@ -117,7 +127,9 @@ async def submit_video(
     if duplicate and not (
         duplicate.status == "deleted" and duplicate.creator_id == creator.id
     ):
-        raise HTTPException(status_code=409, detail="This video has already been submitted")
+        raise HTTPException(
+            status_code=409, detail=f"This {_noun(creator)} has already been submitted"
+        )
 
     if request.story_id is not None:
         story = (
@@ -190,7 +202,9 @@ async def submit_video(
         await db.commit()
     except IntegrityError:
         await db.rollback()
-        raise HTTPException(status_code=409, detail="This video has already been submitted")
+        raise HTTPException(
+            status_code=409, detail=f"This {_noun(creator)} has already been submitted"
+        )
     await db.refresh(video)
     if video.views:
         db.add(ViewSnapshot(video_id=video.id, views=video.views))
@@ -235,12 +249,15 @@ async def delete_video(
         )
     ).scalar_one_or_none()
     if video is None:
-        raise HTTPException(status_code=404, detail="Video not found")
+        raise HTTPException(status_code=404, detail=f"{_noun(creator).capitalize()} not found")
     # Same eligibility basis as the payout the creator sees: a video that has
     # earned (window-limited) money must keep its record.
     eligible = await eligible_views_map(db, [video])
     if video.status == "verified" and video_payout_cents(eligible.get(video.id, video.views)) > 0:
-        raise HTTPException(status_code=400, detail="Verified earning videos can't be deleted")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Verified earning {_noun(creator)}s can't be deleted",
+        )
     # Soft delete: the row and its snapshot history stay, so resubmitting the
     # same video reactivates the ORIGINAL earning window instead of a fresh one.
     video.status = "deleted"

@@ -92,9 +92,8 @@ export default function DashboardPage() {
       </div>
 
       {/* The chart leads: how earnings are trending is the question this page
-          exists to answer, and the totals below read as its summary. A tweet
-          account earns from one stream, so it gets no stream filter. */}
-      <EarningsChartCard showStreams={!tweets} />
+          exists to answer, and the totals below read as its summary. */}
+      <EarningsChartCard />
 
       <div className="flex flex-col gap-10 sm:flex-row">
         <StatCard
@@ -107,17 +106,10 @@ export default function DashboardPage() {
           value={earnings ? formatEuros(earnings.pending_cents) : "—"}
           description="Pending to pay"
         />
-        {tweets ? (
-          <StatCard
-            value={earnings ? String(earnings.referral.active_clients) : "—"}
-            description="Active clients"
-          />
-        ) : (
-          <StatCard
-            value={earnings ? String(earnings.verified_videos) : "—"}
-            description="Videos verified"
-          />
-        )}
+        <StatCard
+          value={earnings ? String(earnings.verified_videos) : "—"}
+          description={tweets ? "Posts verified" : "Videos verified"}
+        />
         <StatCard
           value={earnings ? String(earnings.referral.clients) : "—"}
           description="Referrals signed up"
@@ -163,11 +155,18 @@ export default function DashboardPage() {
           </div>
           <div className="flex flex-col gap-3">
             {tweets ? (
-              <Link href="/daily-threads">
-                <Button kind="secondary" className="w-full justify-between" icon="ph-x-logo">
-                  Open Today&apos;s Threads <i className="ph ph-arrow-right" />
-                </Button>
-              </Link>
+              <>
+                <Link href="/daily-threads">
+                  <Button kind="secondary" className="w-full justify-between" icon="ph-x-logo">
+                    Open Today&apos;s Threads <i className="ph ph-arrow-right" />
+                  </Button>
+                </Link>
+                <Link href="/my-posts">
+                  <Button kind="secondary" className="w-full justify-between" icon="ph-link">
+                    Submit a Post Link <i className="ph ph-arrow-right" />
+                  </Button>
+                </Link>
+              </>
             ) : (
               <>
                 <Link href="/album-stories">
@@ -188,10 +187,10 @@ export default function DashboardPage() {
               </Button>
             </Link>
           </div>
-          {!tweets && earnings && earnings.pending_videos > 0 && (
+          {earnings && earnings.pending_videos > 0 && (
             <p className="text-[14px] leading-5 text-slate-500">
-              {earnings.pending_videos} video{earnings.pending_videos > 1 ? "s" : ""} awaiting
-              view verification.
+              {earnings.pending_videos} {tweets ? "post" : "video"}
+              {earnings.pending_videos > 1 ? "s" : ""} awaiting view verification.
             </p>
           )}
           {tweets && (

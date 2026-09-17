@@ -42,6 +42,7 @@ export const SURFACES: Record<AccountType, Surface> = {
     links: [
       { href: "/dashboard", label: "Dashboard", icon: "ph-squares-four" },
       { href: "/daily-threads", label: "Daily Threads", icon: "ph-x-logo" },
+      { href: "/my-posts", label: "My Posts", icon: "ph-paper-plane-tilt" },
       { href: "/earnings", label: "Earnings", icon: "ph-currency-eur" },
     ],
     feedPath: "/daily-threads",

@@ -3,7 +3,8 @@
 /* Earnings — one balance, two streams, kept visually separate.
 
    This page is a dashboard, not an explainer. After the daily chart it splits
-   into the two ways a creator earns: "Earnings from Views" (per-video pay) and
+   into the two ways a creator earns: "Earnings from Views" (per-video, or
+   per-post for an X account) and
    "Earnings from Trades" (a share of the fees referred clients pay). Each
    carries its own headline number and its own stats; anything spanning both —
    balance, all-time total, payouts — stays outside them.
@@ -98,16 +99,15 @@ function Stat({ value, label }: { value: React.ReactNode; label: string }) {
 
 export default function EarningsPage() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
-  // A tweet account earns from trades only: no video stream, no video rules.
-  // Posts are not paid per view yet, so nothing here pretends they are.
+  /* Both surfaces earn the same two ways, from the same formula — only the
+     word for the thing that earns changes. An X creator submits posts and is
+     paid per view on them exactly as a video creator is. */
   const tweets = surfaceOf(me).type === "tweets";
+  const noun = tweets ? "post" : "video";
+  const nounPlural = tweets ? "posts" : "videos";
   const { data } = useQuery({ queryKey: ["earnings"], queryFn: fetchEarnings });
   const { data: referrals } = useQuery({ queryKey: ["my-referrals"], queryFn: fetchMyReferrals });
-  const { data: videos } = useQuery({
-    queryKey: ["videos"],
-    queryFn: fetchMyVideos,
-    enabled: !!me && !tweets,
-  });
+  const { data: videos } = useQuery({ queryKey: ["videos"], queryFn: fetchMyVideos });
   const [simViews, setSimViews] = useState(25000);
   /* Which stream's rules are open. Each section explains only itself — a
      creator asking "why did this video pay that?" should not have to read
@@ -127,23 +127,13 @@ export default function EarningsPage() {
       <div className="flex flex-col gap-6">
         <Eyebrow icon="ph-currency-eur">Earnings</Eyebrow>
         <h1 className="display-md max-w-[720px] text-ink">
-          {tweets ? (
-            <>
-              A share of every trade.
-              <br />
-              No surprises.
-            </>
-          ) : (
-            <>
-              Two ways to earn.
-              <br />
-              No surprises.
-            </>
-          )}
+          Two ways to earn.
+          <br />
+          No surprises.
         </h1>
       </div>
 
-      <EarningsChartCard showStreams={!tweets} />
+      <EarningsChartCard />
 
       {/* Across both streams — the numbers a creator actually gets paid on */}
       <div className="flex flex-col gap-10 sm:flex-row">
@@ -153,10 +143,9 @@ export default function EarningsPage() {
       </div>
 
       {/* ---------------- Stream 1: views ---------------- */}
-      {!tweets && (
       <section className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
         <StreamHeader
-          icon="ph-play-circle"
+          icon={tweets ? "ph-x-logo" : "ph-play-circle"}
           eyebrow="Earnings from Views"
           onExplain={() => setExplainer("views")}
         />
@@ -168,7 +157,10 @@ export default function EarningsPage() {
             label="Earned from views, all-time"
           />
           <Stat value={data ? formatViews(data.total_views) : "—"} label="Views counting toward pay" />
-          <Stat value={data ? String(data.verified_videos) : "—"} label="Verified videos" />
+          <Stat
+            value={data ? String(data.verified_videos) : "—"}
+            label={`Verified ${nounPlural}`}
+          />
           <Stat value={data ? String(data.pending_videos) : "—"} label="Awaiting review" />
         </div>
 
@@ -180,7 +172,9 @@ export default function EarningsPage() {
             <table className="w-full min-w-[620px] text-left">
               <thead>
                 <tr className="border-b border-ink">
-                  <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">Video</th>
+                  <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">
+                    {tweets ? "Post" : "Video"}
+                  </th>
                   <th className="py-3 pr-4 text-[13px] font-medium leading-5 text-slate-500">Posted</th>
                   <th className="py-3 pr-4 text-right text-[13px] font-medium leading-5 text-slate-500">
                     Views counting
@@ -228,11 +222,11 @@ export default function EarningsPage() {
         )}
         {videos && !videos.items?.length && (
           <p className="text-[14px] leading-5 text-slate-500">
-            No videos yet — submit your first link in My Videos.
+            No {nounPlural} yet — submit your first link in My{" "}
+            {tweets ? "Posts" : "Videos"}.
           </p>
         )}
       </section>
-      )}
 
       {/* ---------------- Stream 2: trades ---------------- */}
       <section className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
@@ -359,7 +353,7 @@ export default function EarningsPage() {
       <Modal
         open={explainer === "views"}
         onClose={() => setExplainer(null)}
-        title="How video pay is calculated"
+        title={`How ${noun} pay is calculated`}
       >
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1.3fr_1fr]">
           <div className="flex flex-col gap-5">
@@ -370,12 +364,12 @@ export default function EarningsPage() {
                       {
                         icon: "ph-flag",
                         term: `Nothing pays below ${formatViews(data.formula.min_views)} views`,
-                        body: `A video earns €0,00 until it crosses ${formatViews(data.formula.min_views)} views. There is no partial pay under the threshold — the moment it crosses, the full base kicks in.`,
+                        body: `A ${noun} earns €0,00 until it crosses ${formatViews(data.formula.min_views)} views. There is no partial pay under the threshold — the moment it crosses, the full base kicks in.`,
                       },
                       {
                         icon: "ph-currency-eur",
                         term: `Base: ${formatEuros(data.formula.base_cents)}`,
-                        body: `Paid in full the moment the video passes ${formatViews(data.formula.min_views)} views, whatever happens afterwards.`,
+                        body: `Paid in full the moment the ${noun} passes ${formatViews(data.formula.min_views)} views, whatever happens afterwards.`,
                       },
                       {
                         icon: "ph-trend-up",
@@ -385,17 +379,17 @@ export default function EarningsPage() {
                       {
                         icon: "ph-rocket-launch",
                         term: `Scale: +${formatEuros(data.formula.tier2_cents_per_1k)} per 1.000 views`,
-                        body: `Past ${formatViews(data.formula.tier1_up_to_views)} views the rate halves, but it never stops — a video that keeps running keeps adding.`,
+                        body: `Past ${formatViews(data.formula.tier1_up_to_views)} views the rate halves, but it never stops — a ${noun} that keeps running keeps adding.`,
                       },
                       {
                         icon: "ph-shield-check",
-                        term: `Cap: ${formatEuros(data.formula.cap_cents)} per video`,
-                        body: `One video cannot earn more than this, no matter how far it travels. The cap is per video, not per month — ten capped videos pay ten times the cap.`,
+                        term: `Cap: ${formatEuros(data.formula.cap_cents)} per ${noun}`,
+                        body: `One ${noun} cannot earn more than this, no matter how far it travels. The cap is per ${noun}, not per month — ten capped ${nounPlural} pay ten times the cap.`,
                       },
                       {
                         icon: "ph-timer",
                         term: `Only the first ${data.formula.window_days} days count`,
-                        body: `Views are counted from the day you submit the link. On day ${data.formula.window_days} the number freezes and that video's pay is final — later views are real reach, but they do not add money.`,
+                        body: `Views are counted from the day you submit the link. On day ${data.formula.window_days} the number freezes and that ${noun}'s pay is final — later views are real reach, but they do not add money.`,
                       },
                       {
                         icon: "ph-paper-plane-tilt",
@@ -405,12 +399,14 @@ export default function EarningsPage() {
                       {
                         icon: "ph-seal-check",
                         term: "Views have to be verified",
-                        body: "YouTube is checked automatically against the platform. TikTok and Instagram have no public numbers, so the Stalvian team verifies those by hand — the video sits as “pending” until then, and pending videos pay nothing yet.",
+                        body: tweets
+                          ? "X publishes no view count we can read, so the Stalvian team checks every post by hand — it sits as “pending” until then, and pending posts pay nothing yet."
+                          : "YouTube is checked automatically against the platform. TikTok and Instagram have no public numbers, so the Stalvian team verifies those by hand — the video sits as “pending” until then, and pending videos pay nothing yet.",
                       },
                       {
                         icon: "ph-warning",
-                        term: "Keep your videos up",
-                        body: "Deleting a video after posting is a strike, and it stops earning the moment it comes down. Two strikes end the partnership.",
+                        term: `Keep your ${nounPlural} up`,
+                        body: `Deleting a ${noun} after posting is a strike, and it stops earning the moment it comes down. Two strikes end the partnership.`,
                       },
                     ]
                   : []
@@ -419,7 +415,7 @@ export default function EarningsPage() {
           </div>
 
           <div className="flex flex-col gap-6 self-start rounded-[8px] bg-cream p-6">
-            <h3 className="display-xs text-ink">What would my video earn?</h3>
+            <h3 className="display-xs text-ink">What would my {noun} earn?</h3>
             <div className="flex flex-col gap-2">
               <div className="flex items-baseline justify-between">
                 <span className="text-[15px] leading-6 text-slate-500">Views</span>
@@ -482,9 +478,7 @@ export default function EarningsPage() {
             {
               icon: "ph-infinity",
               term: "No cap inside that year",
-              body: tweets
-                ? "There is no ceiling: a client who trades heavily for twelve months pays you on every one of those fees."
-                : "Unlike video pay there is no ceiling: a client who trades heavily for twelve months pays you on every one of those fees.",
+              body: `Unlike ${noun} pay there is no ceiling: a client who trades heavily for twelve months pays you on every one of those fees.`,
             },
             {
               icon: "ph-user-minus",
@@ -498,10 +492,8 @@ export default function EarningsPage() {
             },
             {
               icon: "ph-wallet",
-              term: tweets ? "Paid out monthly" : "Paid from the same balance",
-              body: tweets
-                ? "Your share of client fees builds up in your balance, and the Stalvian team pays it out monthly."
-                : "Your share of client fees lands in the same balance as your video pay, and the Stalvian team pays it out monthly.",
+              term: "Paid from the same balance",
+              body: `Your share of client fees lands in the same balance as your ${noun} pay, and the Stalvian team pays it out monthly.`,
             },
           ]}
         />

@@ -31,6 +31,7 @@ export const PLATFORM_ICONS: Record<string, string> = {
   tiktok: "ph-tiktok-logo",
   instagram: "ph-instagram-logo",
   youtube: "ph-youtube-logo",
+  x: "ph-x-logo",
 };
 
 export const LANGUAGES: { code: string; label: string }[] = [

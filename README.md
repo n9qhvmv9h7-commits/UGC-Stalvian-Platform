@@ -29,8 +29,16 @@ Every creator is one of two **account types**, chosen by the admin at invite
 |---|---|---|
 | Content | Album Stories, Daily Scripts (breaking, movers, top trades) | **Daily Threads**: Breaking News and Trending, as ready-to-post X threads |
 | Panel feeds | `feed=breaking\|movers\|hindsight\|trending` | `feed=tweets_breaking\|tweets_trending` — items carry `tweets: [{text, order}]` |
-| Submissions | My Videos, view-based pay | none yet — `POST /api/videos` and album-story generation answer 403 |
-| Earnings | views pay + client referrals | client referrals only |
+| Submissions | My Videos — TikTok, Instagram, YouTube links | My Posts — X links (`x.com/…/status/…`, `t.co` resolved) |
+| Earnings | views pay + client referrals | the same, on post views |
+
+Both surfaces are paid by the same formula on the same `video_submissions`
+table — a submission's `platform` says which surface it came from, and
+`view_tracker.SURFACE_PLATFORMS` decides which links an account may submit
+(a video account is refused an X link and vice versa). X publishes no view
+count we can read, so every post is verified by an admin, like TikTok and
+Instagram. Album-story generation stays video-only (403), since the panel has
+no thread version of it.
 
 The feed list (`GET /api/feed/types`) is filtered by account type, so the app
 never has to know which feed keys belong to which surface; `src/lib/surface.ts`

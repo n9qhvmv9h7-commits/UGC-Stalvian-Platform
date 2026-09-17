@@ -7,6 +7,7 @@
    character count against X's limit, because a creator posts them one reply
    at a time and the count is the one thing that can stop a post going out. */
 
+import Link from "next/link";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { StoryPayload, Tweet } from "@/lib/api";
@@ -176,9 +177,18 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
             {sourcesOpen ? "Hide Sources" : `Check Sources (${sources.length})`}
           </Button>
         )}
-        <span className="ml-auto text-[12px] leading-4 text-slate-400">
-          Generated {formatDate(story.created_at || story.published_at)}
-        </span>
+        <div className="ml-auto flex items-center gap-4">
+          <span className="text-[12px] leading-4 text-slate-400">
+            Generated {formatDate(story.created_at || story.published_at)}
+          </span>
+          {/* Posting is only half of it — the link has to come back here for
+              the views to be counted and paid. */}
+          <Link href={`/my-posts?story=${story.id}`}>
+            <Button kind="secondary" size="s" icon="ph-paper-plane-tilt">
+              Submit Your Post
+            </Button>
+          </Link>
+        </div>
       </div>
     </div>
   );
