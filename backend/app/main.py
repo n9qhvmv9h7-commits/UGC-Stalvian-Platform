@@ -36,6 +36,8 @@ def _migrate(conn):
             "youtube_handle": "ALTER TABLE creators ADD COLUMN youtube_handle VARCHAR(64)",
             "strikes": "ALTER TABLE creators ADD COLUMN strikes INTEGER NOT NULL DEFAULT 0",
             "referral_code": "ALTER TABLE creators ADD COLUMN referral_code VARCHAR(16)",
+            "account_type": "ALTER TABLE creators ADD COLUMN account_type VARCHAR(8) "
+                            "NOT NULL DEFAULT 'video'",
         },
         "video_submissions": {
             "ownership_state": "ALTER TABLE video_submissions ADD COLUMN ownership_state "

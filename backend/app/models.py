@@ -41,6 +41,11 @@ class Creator(Base):
     tiktok_handle: Mapped[str | None] = mapped_column(String(64), nullable=True)
     instagram_handle: Mapped[str | None] = mapped_column(String(64), nullable=True)
     youtube_handle: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Which surface this creator works on. A video creator gets Album Stories +
+    # Daily Scripts; a tweet creator gets the X equivalents. Set by an admin at
+    # invite and changeable later; a creator only ever sees their own side.
+    # Existing accounts default to "video", which is what they all are.
+    account_type: Mapped[str] = mapped_column(String(8), default="video", index=True)  # video | tweets
     language: Mapped[str] = mapped_column(String(8), default="en")  # all content localized to this
     country: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payout_method: Mapped[str | None] = mapped_column(String(16), nullable=True)  # iban | paypal

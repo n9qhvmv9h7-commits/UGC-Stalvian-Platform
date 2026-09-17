@@ -83,6 +83,8 @@ def _profile(creator: Creator) -> dict:
         "email": creator.email,
         "name": creator.name,
         "handle": creator.handle,
+        # Drives which tabs and feeds this creator sees.
+        "account_type": creator.account_type,
         "status": creator.status,
         "review_note": creator.review_note,
         "strikes": creator.strikes,

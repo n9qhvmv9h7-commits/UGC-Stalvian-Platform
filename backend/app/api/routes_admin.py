@@ -16,6 +16,10 @@ from app.services.earning_window import eligible_views_map, window_cutoff
 from app.services.referrals import assign_referral_code
 from app.services.translator import SUPPORTED_LANGUAGES
 
+# The two creator surfaces. Kept here rather than in a model enum so a new
+# surface is one list entry plus its feeds.
+ACCOUNT_TYPES = ("video", "tweets")
+
 from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -36,7 +40,10 @@ class RecordPayoutRequest(BaseModel):
 
 
 class ReviewCreatorRequest(BaseModel):
-    status: str  # approved | rejected | pending | terminated
+    # Optional so an admin can switch an account's surface without also having
+    # to restate its status.
+    status: str | None = None  # approved | rejected | pending | terminated
+    account_type: str | None = None  # video | tweets
     review_note: str | None = Field(default=None, max_length=255)
 
 
@@ -45,6 +52,9 @@ class CreateCreatorRequest(BaseModel):
 
     email: EmailStr
     name: str | None = Field(default=None, max_length=120)
+    # Which surface this creator works on. Decided here because it shapes
+    # everything they see, and a creator cannot change it themselves.
+    account_type: str = "video"  # video | tweets
     language: str = "en"
     # omit to have a one-time password generated and returned in the response
     password: str | None = Field(default=None, min_length=8, max_length=72)
@@ -59,6 +69,8 @@ async def create_creator(
     email = request.email.lower().strip()
     if request.language not in SUPPORTED_LANGUAGES:
         raise HTTPException(status_code=400, detail=f"Language must be one of {SUPPORTED_LANGUAGES}")
+    if request.account_type not in ACCOUNT_TYPES:
+        raise HTTPException(status_code=400, detail=f"account_type must be one of {ACCOUNT_TYPES}")
     existing = (
         await db.execute(select(Creator).where(Creator.email == email))
     ).scalar_one_or_none()
@@ -71,6 +83,7 @@ async def create_creator(
         email=email,
         password_hash=hash_password(password),
         name=(request.name or email.split("@")[0]).strip(),
+        account_type=request.account_type,
         language=request.language,
         status="approved",
     )
@@ -81,6 +94,7 @@ async def create_creator(
         await audit(
             db, admin, "creator.invite", "creator", creator.id,
             {"email": email, "name": creator.name, "language": creator.language,
+             "account_type": creator.account_type,
              "password_generated": generated, "referral_code": creator.referral_code},
         )
         await db.commit()
@@ -91,6 +105,7 @@ async def create_creator(
     return {
         "creator": {
             "id": creator.id, "email": creator.email, "name": creator.name,
+            "account_type": creator.account_type,
             "referral_code": creator.referral_code,
         },
         # shown once to the admin, who shares it with the creator
@@ -129,6 +144,7 @@ async def list_creators(
                 "id": c.id,
                 "name": c.name,
                 "email": c.email,
+                "account_type": c.account_type,
                 "language": c.language,
                 "country": c.country,
                 "status": c.status,
@@ -153,21 +169,32 @@ async def review_creator(
     admin: Creator = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    if request.status not in ("pending", "approved", "rejected", "terminated"):
+    if request.status is not None and request.status not in (
+        "pending", "approved", "rejected", "terminated"
+    ):
         raise HTTPException(status_code=400, detail="Invalid status")
+    if request.account_type is not None and request.account_type not in ACCOUNT_TYPES:
+        raise HTTPException(status_code=400, detail=f"account_type must be one of {ACCOUNT_TYPES}")
     creator = (
         await db.execute(select(Creator).where(Creator.id == creator_id))
     ).scalar_one_or_none()
     if creator is None:
         raise HTTPException(status_code=404, detail="Creator not found")
-    old_status = creator.status
-    creator.status = request.status
+    detail: dict = {}
+    if request.status is not None and request.status != creator.status:
+        detail["from"] = creator.status
+        detail["to"] = request.status
+        creator.status = request.status
+    if request.account_type is not None and request.account_type != creator.account_type:
+        # Worth auditing on its own: it changes every feed this creator sees.
+        detail["account_type_from"] = creator.account_type
+        detail["account_type_to"] = request.account_type
+        creator.account_type = request.account_type
     if request.review_note is not None:
         creator.review_note = request.review_note or None
-    await audit(
-        db, admin, "creator.review", "creator", creator.id,
-        {"from": old_status, "to": request.status, "note": request.review_note},
-    )
+        detail["note"] = request.review_note
+    if detail:
+        await audit(db, admin, "creator.review", "creator", creator.id, detail)
     await db.commit()
     return {"status": "ok"}
 

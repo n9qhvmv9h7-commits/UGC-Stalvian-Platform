@@ -11,6 +11,7 @@ import {
   fetchApplications,
   fetchCreatorMetrics,
   reviewCreator,
+  type AccountType,
   type CreatorApplication,
   type CreatorMetrics,
 } from "@/lib/api";
@@ -34,7 +35,12 @@ const SORTS = [
 
 function InviteModal({ onClose }: { onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState({ email: "", name: "", language: "en" });
+  const [form, setForm] = useState<{
+    email: string;
+    name: string;
+    language: string;
+    account_type: AccountType;
+  }>({ email: "", name: "", language: "en", account_type: "video" });
   const [issued, setIssued] = useState<{ email: string; password: string; code: string | null } | null>(null);
 
   const invite = useMutation({
@@ -43,6 +49,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
         email: form.email.trim(),
         name: form.name.trim() || undefined,
         language: form.language,
+        account_type: form.account_type,
       }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["admin-creators"] });
@@ -107,7 +114,7 @@ function InviteModal({ onClose }: { onClose: () => void }) {
               kind="secondary"
               onClick={() => {
                 setIssued(null);
-                setForm({ email: "", name: "", language: "en" });
+                setForm({ email: "", name: "", language: "en", account_type: "video" });
               }}
             >
               Add Another
@@ -140,6 +147,19 @@ function InviteModal({ onClose }: { onClose: () => void }) {
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
           />
+          {/* Decides the creator's whole surface — video creators get Album
+              Stories and Daily Scripts, tweet creators get the X equivalents.
+              An admin can change it later, but a creator cannot. */}
+          <SelectField
+            label="Creates"
+            value={form.account_type}
+            onChange={(e) =>
+              setForm({ ...form, account_type: e.target.value as AccountType })
+            }
+          >
+            <option value="video">Videos — TikTok, Instagram, YouTube</option>
+            <option value="tweets">Tweets — X threads</option>
+          </SelectField>
           <SelectField
             label="Language"
             value={form.language}
@@ -254,6 +274,9 @@ function CreatorCard({
           >
             {creator.status === "approved" ? "active" : creator.status}
           </Badge>
+          {/* Only flag tweet accounts — video is the default and the
+              overwhelming majority, so badging it would be noise. */}
+          {creator.account_type === "tweets" && <Badge tone="ink">X / tweets</Badge>}
         </div>
       </div>
 

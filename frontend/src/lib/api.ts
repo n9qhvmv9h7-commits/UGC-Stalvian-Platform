@@ -59,12 +59,17 @@ api.interceptors.response.use(
 
 // ---------- Types ----------
 
+/** A creator makes videos or tweets, never both. Set by an admin at invite. */
+export type AccountType = "video" | "tweets";
+
 export interface Creator {
   id: number;
   email: string;
   name: string;
   handle: string | null;
   status: "pending" | "approved" | "rejected" | "terminated";
+  /** Which surface this creator works on — drives tabs and feeds. */
+  account_type: AccountType;
   review_note: string | null;
   strikes: number;
   tiktok_handle: string | null;
@@ -238,6 +243,7 @@ export interface CreatorApplication {
   id: number;
   name: string;
   email: string;
+  account_type: AccountType;
   language: string;
   country: string | null;
   status: string;
@@ -403,10 +409,21 @@ export const fetchAuditLog = (page: number, limit = 50) =>
     })
     .then((r) => r.data);
 
-export const createCreator = (body: { email: string; name?: string; language?: string }) =>
+export const createCreator = (body: {
+  email: string;
+  name?: string;
+  language?: string;
+  account_type?: AccountType;
+}) =>
   api
     .post<{
-      creator: { id: number; email: string; name: string; referral_code: string | null };
+      creator: {
+        id: number;
+        email: string;
+        name: string;
+        account_type: AccountType;
+        referral_code: string | null;
+      };
       password: string | null;
     }>(
       "/api/admin/creators",
@@ -419,7 +436,10 @@ export const fetchApplications = (status: string) =>
     .get<{ items: CreatorApplication[] }>("/api/admin/creators", { params: { status } })
     .then((r) => r.data);
 
-export const reviewCreator = (id: number, body: { status: string; review_note?: string }) =>
+export const reviewCreator = (
+  id: number,
+  body: { status?: string; account_type?: AccountType; review_note?: string }
+) =>
   api.patch(`/api/admin/creators/${id}`, body).then((r) => r.data);
 
 // ---------- Stories ----------
