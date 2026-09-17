@@ -82,8 +82,11 @@ export default function SettingsPage() {
       const token = (result as { token?: string }).token;
       if (token) setToken(token);
       queryClient.invalidateQueries({ queryKey: ["me"] });
-      queryClient.invalidateQueries({ queryKey: ["breaking"] });
-      queryClient.invalidateQueries({ queryKey: ["movers"] });
+      // Content is cached per language, so a language change invalidates all
+      // of it: both feed shapes, the unread counts, and album stories.
+      queryClient.invalidateQueries({ queryKey: ["feed"] });
+      queryClient.invalidateQueries({ queryKey: ["feed-preview"] });
+      queryClient.invalidateQueries({ queryKey: ["feed-types"] });
       queryClient.invalidateQueries({ queryKey: ["my-stories"] });
       setPasswords({ current: "", next: "" });
       toast.success("Settings saved");

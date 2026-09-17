@@ -23,7 +23,10 @@ function FeedColumn({
   enabled: boolean;
 }) {
   const { data } = useQuery({
-    queryKey: ["feed", feedKey],
+    // NOT ["feed", key]: that key belongs to the feed page's infinite query,
+    // and an infinite observer reading this plain {items,page,limit} throws
+    // during render (pages.length on undefined). One key, one shape.
+    queryKey: ["feed-preview", feedKey],
     queryFn: () => fetchFeed(feedKey),
     enabled,
   });
