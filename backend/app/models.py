@@ -73,7 +73,9 @@ class Story(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     creator_id: Mapped[int | None] = mapped_column(ForeignKey("creators.id"), nullable=True, index=True)
-    kind: Mapped[str] = mapped_column(String(16), index=True)  # album_story | breaking | mover
+    # album_story | breaking | mover | hindsight | trending (video surface)
+    # x_breaking | x_trending (X threads — payload carries `tweets`, not scenes)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
     panel_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)  # panel script/post id
     album_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     album_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)  # fund | politician

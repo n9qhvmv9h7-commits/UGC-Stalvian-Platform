@@ -61,6 +61,10 @@ async def submit_video(
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
+    # Tweet accounts have no video surface at all — no page to submit from, no
+    # pay formula for posts yet. Refused here too so the API agrees with the app.
+    if creator.account_type != "video":
+        raise HTTPException(status_code=403, detail="Video submissions are for video accounts")
     url = request.url.strip()
     if not url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="Please paste a full video URL")

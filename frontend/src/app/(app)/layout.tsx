@@ -14,8 +14,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <footer className="border-t border-bone-200 px-6 py-8 lg:px-12">
           <p className="mx-auto max-w-[1200px] text-[12px] leading-4 text-slate-400">
             Content produced through the Stalvian Creator Program is marketing communication and is
-            not investment advice. Always disclose the paid partnership in your videos. Your capital
-            is at risk.
+            not investment advice. Always disclose the paid partnership in your videos and posts.
+            Your capital is at risk.
           </p>
         </footer>
       </div>

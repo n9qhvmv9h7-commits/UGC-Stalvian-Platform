@@ -123,8 +123,16 @@ export interface StoryPayload {
   person_label?: string;
   amount_str?: string;
   pct_change?: number;
+  /** X threads (tweet accounts): the post as tweets, in order. A story with
+      tweets has no scenes — it is posted, not shot. */
+  tweets?: Tweet[];
   published_at?: string | null;
   created_at?: string | null;
+}
+
+export interface Tweet {
+  text: string;
+  order: number;
 }
 
 export interface AlbumStats {

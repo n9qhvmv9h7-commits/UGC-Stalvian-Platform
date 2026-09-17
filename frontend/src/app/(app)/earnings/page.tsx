@@ -14,7 +14,8 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { fetchEarnings, fetchMyReferrals, fetchMyVideos, type PayoutFormula } from "@/lib/api";
+import { fetchEarnings, fetchMe, fetchMyReferrals, fetchMyVideos, type PayoutFormula } from "@/lib/api";
+import { surfaceOf } from "@/lib/surface";
 import { PLATFORM_ICONS, formatDate, formatEuros, formatViews } from "@/lib/format";
 import { Badge, Eyebrow, StatCard } from "@/components/ui";
 import { EarningsChartCard } from "@/components/earnings-chart";
@@ -96,9 +97,17 @@ function Stat({ value, label }: { value: React.ReactNode; label: string }) {
 }
 
 export default function EarningsPage() {
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
+  // A tweet account earns from trades only: no video stream, no video rules.
+  // Posts are not paid per view yet, so nothing here pretends they are.
+  const tweets = surfaceOf(me).type === "tweets";
   const { data } = useQuery({ queryKey: ["earnings"], queryFn: fetchEarnings });
   const { data: referrals } = useQuery({ queryKey: ["my-referrals"], queryFn: fetchMyReferrals });
-  const { data: videos } = useQuery({ queryKey: ["videos"], queryFn: fetchMyVideos });
+  const { data: videos } = useQuery({
+    queryKey: ["videos"],
+    queryFn: fetchMyVideos,
+    enabled: !!me && !tweets,
+  });
   const [simViews, setSimViews] = useState(25000);
   /* Which stream's rules are open. Each section explains only itself — a
      creator asking "why did this video pay that?" should not have to read
@@ -118,13 +127,23 @@ export default function EarningsPage() {
       <div className="flex flex-col gap-6">
         <Eyebrow icon="ph-currency-eur">Earnings</Eyebrow>
         <h1 className="display-md max-w-[720px] text-ink">
-          Two ways to earn.
-          <br />
-          No surprises.
+          {tweets ? (
+            <>
+              A share of every trade.
+              <br />
+              No surprises.
+            </>
+          ) : (
+            <>
+              Two ways to earn.
+              <br />
+              No surprises.
+            </>
+          )}
         </h1>
       </div>
 
-      <EarningsChartCard />
+      <EarningsChartCard showStreams={!tweets} />
 
       {/* Across both streams — the numbers a creator actually gets paid on */}
       <div className="flex flex-col gap-10 sm:flex-row">
@@ -134,6 +153,7 @@ export default function EarningsPage() {
       </div>
 
       {/* ---------------- Stream 1: views ---------------- */}
+      {!tweets && (
       <section className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
         <StreamHeader
           icon="ph-play-circle"
@@ -212,6 +232,7 @@ export default function EarningsPage() {
           </p>
         )}
       </section>
+      )}
 
       {/* ---------------- Stream 2: trades ---------------- */}
       <section className="dashed-card flex flex-col gap-6 p-6 lg:p-8">
@@ -461,7 +482,9 @@ export default function EarningsPage() {
             {
               icon: "ph-infinity",
               term: "No cap inside that year",
-              body: "Unlike video pay there is no ceiling: a client who trades heavily for twelve months pays you on every one of those fees.",
+              body: tweets
+                ? "There is no ceiling: a client who trades heavily for twelve months pays you on every one of those fees."
+                : "Unlike video pay there is no ceiling: a client who trades heavily for twelve months pays you on every one of those fees.",
             },
             {
               icon: "ph-user-minus",
@@ -475,8 +498,10 @@ export default function EarningsPage() {
             },
             {
               icon: "ph-wallet",
-              term: "Paid from the same balance",
-              body: "Your share of client fees lands in the same balance as your video pay, and the Stalvian team pays it out monthly.",
+              term: tweets ? "Paid out monthly" : "Paid from the same balance",
+              body: tweets
+                ? "Your share of client fees builds up in your balance, and the Stalvian team pays it out monthly."
+                : "Your share of client fees lands in the same balance as your video pay, and the Stalvian team pays it out monthly.",
             },
           ]}
         />

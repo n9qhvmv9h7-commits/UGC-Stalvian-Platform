@@ -14,6 +14,10 @@ const KIND_LABELS: Record<string, string> = {
   album_story: "Album Stories",
   breaking: "Breaking News",
   mover: "Movers",
+  hindsight: "Top Trades",
+  trending: "Top Trades",
+  x_breaking: "X · Breaking News",
+  x_trending: "X · Trending",
 };
 
 export default function AdminContentPage() {

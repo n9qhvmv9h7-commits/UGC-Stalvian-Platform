@@ -55,7 +55,7 @@ function SectionLabel({ tone = "light", children }: { tone?: "light" | "dark"; c
   );
 }
 
-function ViralityMeter({ score }: { score: number }) {
+export function ViralityMeter({ score }: { score: number }) {
   // 8+ is a strong script — show it in brand green; below that, gold.
   const strong = score >= 8;
   return (

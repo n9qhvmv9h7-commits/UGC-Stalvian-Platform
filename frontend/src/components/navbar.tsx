@@ -7,8 +7,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { UnreadDot } from "@/components/ui";
 import { clearToken, fetchFeedTypes, fetchMe, getToken } from "@/lib/api";
+import { surfaceOf } from "@/lib/surface";
 
-/* Total unread across every Daily Scripts feed. Same query key the page uses,
+/* Total unread across every daily feed. Same query key the page uses,
    so opening a feed updates the sidebar without a second request. */
 function useUnreadScripts(): number {
   const { data } = useQuery({
@@ -19,24 +20,24 @@ function useUnreadScripts(): number {
   return (data ?? []).reduce((total, t) => total + t.unread, 0);
 }
 
-const LINKS = [
-  { href: "/dashboard", label: "Dashboard", icon: "ph-squares-four" },
-  { href: "/albums", label: "Albums", icon: "ph-stack" },
-  { href: "/album-stories", label: "Album Stories", icon: "ph-vinyl-record" },
-  { href: "/daily-scripts", label: "Daily Scripts", icon: "ph-lightning" },
-  { href: "/my-videos", label: "My Videos", icon: "ph-video-camera" },
-  { href: "/earnings", label: "Earnings", icon: "ph-currency-eur" },
-];
-
-export function Sidebar() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const queryClient = useQueryClient();
+/* The links are the creator's surface, not a constant: a video creator gets
+   the video pages, a tweet creator the X ones. AccountGate has already
+   loaded ["me"] before any of this renders, so the list never flickers from
+   one surface to the other. */
+function useSurface() {
   const { data: me } = useQuery({
     queryKey: ["me"],
     queryFn: fetchMe,
     enabled: !!getToken(),
   });
+  return { me, surface: surfaceOf(me) };
+}
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const { me, surface } = useSurface();
   const unread = useUnreadScripts();
 
   const logout = () => {
@@ -56,7 +57,7 @@ export function Sidebar() {
       </Link>
 
       <nav className="mt-10 flex flex-1 flex-col gap-1">
-        {LINKS.map((link) => {
+        {surface.links.map((link) => {
           const active = pathname.startsWith(link.href);
           return (
             <Link
@@ -68,7 +69,7 @@ export function Sidebar() {
             >
               <i className={`ph ${link.icon} text-[20px]`} />
               {link.label}
-              {link.href === "/daily-scripts" && (
+              {link.href === surface.feedPath && (
                 <span className="ml-auto">
                   <UnreadDot count={unread} onDark />
                 </span>
@@ -120,6 +121,7 @@ export function MobileNav() {
   const pathname = usePathname();
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { surface } = useSurface();
   const unread = useUnreadScripts();
 
   return (
@@ -150,7 +152,7 @@ export function MobileNav() {
         </div>
       </div>
       <div className="flex gap-1 overflow-x-auto border-b border-bone-200 bg-white px-4 py-2">
-        {LINKS.map((link) => (
+        {surface.links.map((link) => (
           <Link
             key={link.href}
             href={link.href}
@@ -159,7 +161,7 @@ export function MobileNav() {
             }`}
           >
             {link.label}
-            {link.href === "/daily-scripts" && <UnreadDot count={unread} />}
+            {link.href === surface.feedPath && <UnreadDot count={unread} />}
           </Link>
         ))}
       </div>

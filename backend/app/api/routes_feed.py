@@ -24,9 +24,15 @@ router = APIRouter(prefix="/api/feed", tags=["feed"])
 # the creator picks need not be one panel feed: Top Trades presents hindsight
 # and trending together, since to a creator they are one idea — the trade that
 # turned out to matter — even though the panel generates them separately.
+#
+# `surface` is the creator account type the feed belongs to. A video creator
+# and a tweet creator never see each other's feeds: the selector, the counts
+# and the feed itself are all filtered on it, so the app never has to know
+# which keys are which.
 FEED_TYPES: list[dict] = [
     {
         "key": "breaking",
+        "surface": "video",
         "kinds": ["breaking"],
         "label": "Breaking News",
         "description": (
@@ -36,6 +42,7 @@ FEED_TYPES: list[dict] = [
     },
     {
         "key": "movers",
+        "surface": "video",
         "kinds": ["mover"],
         "label": "Movers",
         "description": (
@@ -45,6 +52,7 @@ FEED_TYPES: list[dict] = [
     },
     {
         "key": "top-trades",
+        "surface": "video",
         "kinds": ["hindsight", "trending"],
         "label": "Top Trades",
         "description": (
@@ -52,8 +60,44 @@ FEED_TYPES: list[dict] = [
             "worth, and the ones people are watching right now."
         ),
     },
+    # ---- X threads (tweet accounts) ----
+    {
+        "key": "x-breaking",
+        "surface": "tweets",
+        "kinds": ["x_breaking"],
+        "label": "Breaking News",
+        "description": (
+            "Fresh market stories as ready-to-post threads: the headline, the tickers "
+            "that move, and the politician or fund that was already in the trade. "
+            "New threads arrive through the day."
+        ),
+    },
+    {
+        "key": "x-trending",
+        "surface": "tweets",
+        "kinds": ["x_trending"],
+        "label": "Trending",
+        "description": (
+            "The trend everyone is talking about, the stock that benefits from it, and "
+            "the insider who bought it — three tweets, ready to post."
+        ),
+    },
 ]
 _BY_KEY = {t["key"]: t for t in FEED_TYPES}
+
+
+def _types_for(creator: Creator) -> list[dict]:
+    """The feeds this creator's surface serves."""
+    return [t for t in FEED_TYPES if t["surface"] == creator.account_type]
+
+
+def _feed_for(creator: Creator, key: str) -> dict:
+    """Resolve a feed key for this creator. A feed from the other surface is
+    a 404, not a 403: to a tweet creator the video feeds do not exist."""
+    feed_type = _BY_KEY.get(key)
+    if feed_type is None or feed_type["surface"] != creator.account_type:
+        raise HTTPException(status_code=404, detail=f"Unknown feed: {key}")
+    return feed_type
 
 # Manual refresh shares one panel sync at a time, at most once per minute.
 _REFRESH_COOLDOWN = 60
@@ -105,9 +149,10 @@ async def feed_types(
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
-    """The feeds this app serves, with how many stories are live in each — the
-    app builds its type selector from this, so a new feed appears without a
-    frontend release."""
+    """The feeds this creator's surface serves, with how many stories are live
+    in each — the app builds its type selector from this, so a new feed
+    appears without a frontend release."""
+    types = _types_for(creator)
     live = Story.creator_id.is_(None), Story.status == "active"
     rows = (
         await db.execute(
@@ -136,13 +181,13 @@ async def feed_types(
                         and_(Story.kind.in_(t["kinds"]), Story.created_at > seen[t["key"]])
                         if t["key"] in seen
                         else Story.kind.in_(t["kinds"])
-                        for t in FEED_TYPES
+                        for t in types
                     ]
                 ),
             )
             .group_by(Story.kind)
         )
-    ).all()
+    ).all() if types else []
     unread = {kind: int(n) for kind, n in unread_rows}
 
     return {
@@ -154,7 +199,7 @@ async def feed_types(
                 "count": sum(counts.get(k, 0) for k in t["kinds"]),
                 "unread": sum(unread.get(k, 0) for k in t["kinds"]),
             }
-            for t in FEED_TYPES
+            for t in types
         ]
     }
 
@@ -167,8 +212,7 @@ async def mark_feed_seen(
 ):
     """Called when a creator looks at a feed. Everything stored before now
     stops counting as unread for them."""
-    if key not in _BY_KEY:
-        raise HTTPException(status_code=404, detail=f"Unknown feed: {key}")
+    _feed_for(creator, key)
     row = (
         await db.execute(
             select(FeedRead).where(FeedRead.creator_id == creator.id, FeedRead.feed_key == key)
@@ -215,7 +259,5 @@ async def feed(
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
-    feed_type = _BY_KEY.get(key)
-    if feed_type is None:
-        raise HTTPException(status_code=404, detail=f"Unknown feed: {key}")
+    feed_type = _feed_for(creator, key)
     return await _feed(db, creator, feed_type["kinds"], page, limit)

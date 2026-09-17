@@ -15,8 +15,28 @@ program (accounts, video tracking, payouts) on top.
 | **Album Stories** | Pick an album (hedge fund or politician) + an angle (origin story, scandal, strategy, best trades…) → a full script is generated in the creator's language | `POST /api/content-scripts/generate`, `POST /api/politician-scripts/generate` |
 | **Breaking News** | Market events + how tracked politicians/funds are positioned | `GET /api/breaking-scripts/scripts` |
 | **Movers** | A stock that moved big + the album that caught the trade before | `GET /api/album-trades?feed=movers` (+ `feed=daily`) |
+| **Daily Threads** (X creators) | The same breaking and trending posts composed as X threads by the panel | `GET /api/ugc/scripts?feed=tweets_breaking\|tweets_trending` |
 | **My Videos** | Paste published video links; views are tracked (YouTube auto, TikTok/IG verified by team) | — |
 | **Earnings** | Live balance, payout history, and the pay formula with a simulator | — |
+
+## Account types — videos or X
+
+Every creator is one of two **account types**, chosen by the admin at invite
+(`Creator.account_type`, `video` | `tweets`) and switchable later through
+`PATCH /api/admin/creators/{id}`. A creator only ever sees their own surface:
+
+| | Video creator | X creator (`tweets`) |
+|---|---|---|
+| Content | Album Stories, Daily Scripts (breaking, movers, top trades) | **Daily Threads**: Breaking News and Trending, as ready-to-post X threads |
+| Panel feeds | `feed=breaking\|movers\|hindsight\|trending` | `feed=tweets_breaking\|tweets_trending` — items carry `tweets: [{text, order}]` |
+| Submissions | My Videos, view-based pay | none yet — `POST /api/videos` and album-story generation answer 403 |
+| Earnings | views pay + client referrals | client referrals only |
+
+The feed list (`GET /api/feed/types`) is filtered by account type, so the app
+never has to know which feed keys belong to which surface; `src/lib/surface.ts`
+holds the per-surface navigation and the guard that sends a creator home from
+the other surface's pages. Threads are translated like scripts, with the extra
+rule that a translation is only cached if every tweet stays under 280 characters.
 
 ## Pay formula
 

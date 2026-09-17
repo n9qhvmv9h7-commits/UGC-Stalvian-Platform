@@ -124,13 +124,29 @@ _FEED_KINDS = {
     "movers": "mover",
     "hindsight": "hindsight",
     "trending": "trending",
+    # X threads for creators on tweet accounts. The panel composes the tweet
+    # text server-side from the same posts its Instagram layouts render, and
+    # serves them on the same /api/ugc/scripts surface — so they sync, retract
+    # and translate exactly like the video feeds. Kinds are prefixed "x_" so
+    # the two surfaces can never be confused in a query.
+    "tweets_breaking": "x_breaking",
+    "tweets_trending": "x_trending",
 }
 
 
+def is_thread_kind(kind: str | None) -> bool:
+    return bool(kind) and kind.startswith("x_")
+
+
 def _payload_fn(kind: str):
-    """Movers carry extra chart fields; every other feed is the plain script
-    shape, which is also the right default for a feed added later."""
-    return _mover_script_payload if kind == "mover" else _breaking_payload
+    """Movers carry extra chart fields, threads carry tweets instead of
+    scenes; every other feed is the plain script shape, which is also the
+    right default for a feed added later."""
+    if kind == "mover":
+        return _mover_script_payload
+    if is_thread_kind(kind):
+        return _thread_payload
+    return _breaking_payload
 
 
 async def sync_all(db: AsyncSession) -> dict:
@@ -325,6 +341,29 @@ def _breaking_payload(item: dict) -> dict:
         "scenes": normalize_scenes(item.get("scenes")),
         "alternative_hooks": item.get("alternative_hooks") or [],
         "call_to_action": item.get("call_to_action"),
+        "hashtags": item.get("hashtags") or [],
+        "virality_score": item.get("virality_score"),
+        "sources": item.get("sources") or [],
+    }
+
+
+def _thread_payload(item: dict) -> dict:
+    """An X thread from the panel: `tweets` is the whole point, and the rest
+    is what a creator needs to judge and cite it. Panel imagery is never
+    carried — creators supply their own visuals."""
+    tweets = [
+        {"text": str(t.get("text")).strip(), "order": t.get("order") or i + 1}
+        for i, t in enumerate(item.get("tweets") or [])
+        if isinstance(t, dict) and str(t.get("text") or "").strip()
+    ]
+    chart = item.get("chart_data") or {}
+    # Trending headlines are line-broken for the Instagram carousel; a title
+    # on a card is one line.
+    title = " ".join(str(item.get("title") or chart.get("slide1_headline") or "").split())
+    return {
+        "title": title,
+        "tweets": tweets,
+        "ticker": item.get("ticker") or chart.get("ticker") or "",
         "hashtags": item.get("hashtags") or [],
         "virality_score": item.get("virality_score"),
         "sources": item.get("sources") or [],

@@ -17,16 +17,27 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tansta
 import { fetchFeed, fetchFeedTypes, markFeedSeen } from "@/lib/api";
 import { Button, Dropdown, EmptyState, Eyebrow, Spinner } from "@/components/ui";
 import { ScriptCard } from "@/components/script-card";
+import { ThreadCard } from "@/components/thread-card";
 
 export interface ScriptFeedProps {
   /** Route this tab lives at, for the ?type= links. */
   basePath: string;
   eyebrow: string;
+  icon?: string;
   headline: string;
   blurb: string;
+  /** What one item is called in the copy: "scripts" to shoot, "threads" to post. */
+  noun?: string;
 }
 
-function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
+function ScriptFeed({
+  basePath,
+  eyebrow,
+  icon = "ph-lightning",
+  headline,
+  blurb,
+  noun = "scripts",
+}: ScriptFeedProps) {
   const router = useRouter();
   const params = useSearchParams();
   const queryClient = useQueryClient();
@@ -82,13 +93,13 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
     <div className="flex flex-col gap-12">
       <div className="flex flex-wrap items-end justify-between gap-6">
         <div className="flex flex-col gap-6">
-          <Eyebrow icon="ph-lightning">{eyebrow}</Eyebrow>
+          <Eyebrow icon={icon}>{eyebrow}</Eyebrow>
           <h1 className="display-md max-w-[720px] text-ink">{headline}</h1>
           <p className="max-w-[560px] text-[18px] leading-6 text-slate-500">{blurb}</p>
         </div>
       </div>
 
-      {(isLoading || !types) && <Spinner label="Loading scripts…" />}
+      {(isLoading || !types) && <Spinner label={`Loading ${noun}…`} />}
 
       {/* A failed fetch must say so — the empty state below is gated on `data`,
           so without this the page renders nothing under the header.
@@ -98,7 +109,7 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
       {!data && (isError || fetchStatus === "paused") && (
         <EmptyState
           icon="ph-plugs"
-          title="Scripts unavailable"
+          title={`${noun[0].toUpperCase()}${noun.slice(1)} unavailable`}
           body="The Stalvian server isn't reachable right now, so the feed couldn't load."
           action={
             <Button kind="secondary" size="m" onClick={() => refetch()}>
@@ -125,15 +136,21 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
       {data && items.length === 0 && active && (
         <EmptyState
           icon="ph-newspaper"
-          title={`No ${active.label.toLowerCase()} scripts yet`}
-          body="Scripts arrive on their own as the Stalvian engine publishes them — nothing to pull, this feed fills itself in."
+          title={`No ${active.label.toLowerCase()} ${noun} yet`}
+          body={`${noun[0].toUpperCase()}${noun.slice(1)} arrive on their own as the Stalvian engine publishes them — nothing to pull, this feed fills itself in.`}
         />
       )}
 
+      {/* A story with tweets is posted, not shot: the card follows the content,
+          so one feed component serves both surfaces. */}
       <div className="flex flex-col gap-4">
-        {items.map((story) => (
-          <ScriptCard key={story.id} story={story} />
-        ))}
+        {items.map((story) =>
+          story.tweets?.length ? (
+            <ThreadCard key={story.id} story={story} />
+          ) : (
+            <ScriptCard key={story.id} story={story} />
+          )
+        )}
       </div>
 
       {hasNextPage && (
@@ -144,7 +161,7 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
           onClick={() => fetchNextPage()}
           disabled={isFetchingNextPage}
         >
-          {isFetchingNextPage ? "Loading…" : "Load Older Scripts"}
+          {isFetchingNextPage ? "Loading…" : `Load Older ${noun[0].toUpperCase()}${noun.slice(1)}`}
         </Button>
       )}
     </div>
@@ -154,7 +171,7 @@ function ScriptFeed({ basePath, eyebrow, headline, blurb }: ScriptFeedProps) {
 export function ScriptFeedPage(props: ScriptFeedProps) {
   // useSearchParams needs a Suspense boundary above it in the App Router.
   return (
-    <Suspense fallback={<Spinner label="Loading scripts…" />}>
+    <Suspense fallback={<Spinner label={`Loading ${props.noun ?? "scripts"}…`} />}>
       <ScriptFeed {...props} />
     </Suspense>
   );

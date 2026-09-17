@@ -4,9 +4,10 @@
    Admins and approved creators pass straight through. */
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { clearToken, fetchMe, getToken, login, setToken, type Creator } from "@/lib/api";
+import { isForeignPath, surfaceOf } from "@/lib/surface";
 import { Button, Spinner } from "@/components/ui";
 
 // Dev-only, opt-in: with NEXT_PUBLIC_DEV_AUTOLOGIN=1 in .env.local, opening
@@ -120,7 +121,16 @@ export function AccountGate({ children }: { children: React.ReactNode }) {
     enabled: hasToken,
   });
 
-  if (!mounted || needsAutoLogin || (hasToken && isLoading)) {
+  // A creator only ever sees their own surface. The sidebar never links to
+  // the other one, but a typed or bookmarked URL can still land there — send
+  // it home rather than render a page whose every request would 404.
+  const pathname = usePathname();
+  const foreign = !!me && isForeignPath(surfaceOf(me), pathname);
+  useEffect(() => {
+    if (foreign) router.replace("/dashboard");
+  }, [foreign, router]);
+
+  if (!mounted || needsAutoLogin || (hasToken && isLoading) || foreign) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white">
         <Spinner label="Loading…" />

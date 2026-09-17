@@ -37,7 +37,15 @@ const STREAMS: {
   { value: "trades", label: "Trades", day: (d) => d.commission_cents, total: (t) => t.commission_cents },
 ];
 
-export function EarningsChartCard({ defaultDays = 30 }: { defaultDays?: number }) {
+export function EarningsChartCard({
+  defaultDays = 30,
+  showStreams = true,
+}: {
+  defaultDays?: number;
+  /** Off for accounts with a single stream — a filter with one real option
+      would only invite the question of where the other one went. */
+  showStreams?: boolean;
+}) {
   const [range, setRange] = useState<DateRange>(() => lastNDays(defaultDays));
   const [stream, setStream] = useState<Stream>("all");
   // ISO strings, not Date objects: the query key has to be value-comparable,
@@ -63,7 +71,7 @@ export function EarningsChartCard({ defaultDays = 30 }: { defaultDays?: number }
                 <span className="font-medium text-ink">{formatEuros(active.total(daily))}</span>{" "}
                 {stream === "views" ? "from views" : stream === "trades" ? "from trades" : "earned"}{" "}
                 · {rangeLabel(range)}
-                {stream === "all" && daily.total_cents > 0 && (
+                {showStreams && stream === "all" && daily.total_cents > 0 && (
                   <span className="text-slate-400">
                     {" "}· {formatEuros(daily.views_cents)} views ·{" "}
                     {formatEuros(daily.commission_cents)} trades
@@ -76,12 +84,14 @@ export function EarningsChartCard({ defaultDays = 30 }: { defaultDays?: number }
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Dropdown
-            value={stream}
-            onChange={setStream}
-            options={STREAMS.map((s) => ({ value: s.value, label: s.label }))}
-            icon="ph-funnel"
-          />
+          {showStreams && (
+            <Dropdown
+              value={stream}
+              onChange={setStream}
+              options={STREAMS.map((s) => ({ value: s.value, label: s.label }))}
+              icon="ph-funnel"
+            />
+          )}
           <DateRangePicker value={range} onChange={setRange} />
         </div>
       </div>

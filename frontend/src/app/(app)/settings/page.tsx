@@ -7,6 +7,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { fetchMe, setToken, updateMe } from "@/lib/api";
 import { LANGUAGES } from "@/lib/format";
+import { surfaceOf } from "@/lib/surface";
 import { Button, Eyebrow, Field, SelectField } from "@/components/ui";
 import { ConnectAccounts } from "@/components/connect-accounts";
 import { ReferralCode } from "@/components/referral-code";
@@ -14,6 +15,9 @@ import { ReferralCode } from "@/components/referral-code";
 export default function SettingsPage() {
   const queryClient = useQueryClient();
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
+  // Connected accounts and the TikTok/Instagram/YouTube handles exist to
+  // verify videos. A tweet account has none to verify, so it sees neither.
+  const tweets = surfaceOf(me).type === "tweets";
 
   const [form, setForm] = useState({
     name: "",
@@ -124,7 +128,7 @@ export default function SettingsPage() {
           <Field
             label="Handle"
             icon="ph-at"
-            placeholder="the handle you post under"
+            placeholder={tweets ? "your X handle" : "the handle you post under"}
             value={form.handle}
             onChange={(e) => setForm({ ...form, handle: e.target.value })}
           />
@@ -140,8 +144,9 @@ export default function SettingsPage() {
             ))}
           </SelectField>
           <p className="-mt-3 text-[14px] leading-5 text-slate-500">
-            Every script — album stories, breaking news, movers — is delivered in this
-            language.
+            {tweets
+              ? "Every thread — breaking news, trending — is delivered in this language."
+              : "Every script — album stories, breaking news, movers — is delivered in this language."}
           </p>
           <Field
             label="Country"
@@ -151,6 +156,7 @@ export default function SettingsPage() {
           />
         </div>
 
+        {!tweets && (
         <div className="flex flex-col gap-6">
           <h2 className="display-xs text-ink">Connected accounts</h2>
         <p className="-mt-2 text-[14px] leading-5 text-slate-500">
@@ -182,6 +188,7 @@ export default function SettingsPage() {
             onChange={(e) => setForm({ ...form, youtube_handle: e.target.value })}
           />
         </div>
+        )}
 
         <div className="flex flex-col gap-6">
           <h2 className="display-xs text-ink">Payout</h2>

@@ -197,6 +197,10 @@ async def generate_story(
     Responds 202 with a `generating` story; poll GET /api/stories/{id} until
     its status becomes `active` or `failed`.
     """
+    # Album stories are video scripts (scenes, narration, overlays). The panel
+    # has no thread version yet, so a tweet account cannot generate one.
+    if creator.account_type != "video":
+        raise HTTPException(status_code=403, detail="Album stories are for video accounts")
     if request.album_kind not in ("fund", "politician"):
         raise HTTPException(status_code=400, detail="album_kind must be fund or politician")
     valid = FUND_ANGLES if request.album_kind == "fund" else POLITICIAN_ANGLES
