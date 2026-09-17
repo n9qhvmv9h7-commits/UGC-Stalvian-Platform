@@ -236,7 +236,7 @@ async def refresh_feeds(
     global _last_refresh
     async with _refresh_lock:
         if time.monotonic() - _last_refresh < _REFRESH_COOLDOWN:
-            return {"status": "ok", "new_breaking": 0, "new_movers": 0, "cooldown": True}
+            return {"status": "ok", "created": 0, "updated": 0, "cooldown": True}
         # Cooldown applies to failures too — creators hammering refresh during
         # a panel outage must not amplify it into the panel's rate limit.
         _last_refresh = time.monotonic()

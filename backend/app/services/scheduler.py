@@ -1,5 +1,6 @@
 """Background jobs (APScheduler — no Celery/Redis needed at this scale)."""
 import logging
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -52,8 +53,22 @@ async def _refresh_views():
 
 def start():
     # Panel generates breaking scripts ~5x/day and movers daily; 30 min keeps us fresh.
-    scheduler.add_job(_sync_feeds, "interval", minutes=30, id="sync_feeds")
+    #
+    # The first run is a few seconds after boot rather than a full interval
+    # later. An interval job's first fire is one interval away, so a deploy
+    # that adds a feed served creators an empty page for half an hour with
+    # nothing wrong and nothing to do about it. Off the request path, so a
+    # slow or unreachable panel still never delays startup.
+    scheduler.add_job(
+        _sync_feeds,
+        "interval",
+        minutes=30,
+        id="sync_feeds",
+        next_run_time=datetime.now(timezone.utc) + timedelta(seconds=15),
+    )
     scheduler.add_job(_refresh_views, "interval", hours=6, id="refresh_views")
     scheduler.add_job(_sync_social, "interval", hours=6, id="sync_social")
     scheduler.start()
-    logger.info("Scheduler started (feed sync 30m, view refresh 6h, social sync 6h)")
+    logger.info(
+        "Scheduler started (feed sync in 15s then every 30m, view refresh 6h, social sync 6h)"
+    )

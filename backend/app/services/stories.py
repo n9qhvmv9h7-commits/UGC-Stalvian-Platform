@@ -151,24 +151,34 @@ def _payload_fn(kind: str):
 
 async def sync_all(db: AsyncSession) -> dict:
     """The single sync pass. Each part fails soft so one broken feed never
-    blocks the others."""
-    result = {"new_breaking": 0, "new_movers": 0, "updated": 0, "retracted": 0, "catalog": False}
+    blocks the others — but a part that failed is REPORTED rather than only
+    logged: a feed that stays empty because the panel refused it is otherwise
+    indistinguishable from a feed the panel has nothing for, and the only
+    place that difference is visible is a server log nobody is watching."""
+    result: dict = {
+        "new_breaking": 0, "new_movers": 0, "created": 0,
+        "updated": 0, "retracted": 0, "catalog": False, "errors": {},
+    }
     try:
         await cache_set(db, "albums", await panel.list_albums())
         result["catalog"] = True
     except PanelError as exc:
         logger.warning("Catalog sync skipped: %s", exc)
+        result["errors"]["albums"] = str(exc)
     for feed in _FEED_KINDS:
         try:
             created, updated = await _sync_feed(db, feed)
             result[f"new_{feed}"] = created
+            result["created"] += created
             result["updated"] += updated
         except PanelError as exc:
             logger.warning("%s sync skipped: %s", feed, exc)
+            result["errors"][feed] = str(exc)
     try:
         result["retracted"] = await _reconcile_retractions(db)
     except PanelError as exc:
         logger.warning("Retraction reconcile skipped: %s", exc)
+        result["errors"]["retractions"] = str(exc)
     return result
 
 
