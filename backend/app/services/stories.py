@@ -175,9 +175,10 @@ async def sync_all(db: AsyncSession) -> dict:
             logger.warning("%s sync skipped: %s", feed, exc)
             result["errors"][feed] = str(exc)
     try:
-        result["retracted"] = await _reconcile_retractions(db)
+        result["retracted"], refreshed = await _reconcile_feeds(db)
+        result["updated"] += refreshed
     except PanelError as exc:
-        logger.warning("Retraction reconcile skipped: %s", exc)
+        logger.warning("Feed reconcile skipped: %s", exc)
         result["errors"]["retractions"] = str(exc)
     return result
 
@@ -220,8 +221,15 @@ async def _sync_feed(db: AsyncSession, feed: str) -> tuple[int, int]:
     return created, updated
 
 
-async def _upsert_story(db: AsyncSession, kind: str, item: dict) -> tuple[int, int]:
-    """Insert or update one panel script. Returns (created, updated) as 0/1."""
+async def _upsert_story(
+    db: AsyncSession, kind: str, item: dict, *, trust_payload: bool = False
+) -> tuple[int, int]:
+    """Insert or update one panel script. Returns (created, updated) as 0/1.
+
+    `trust_payload` skips the replay guard below. Pass it only for a full read
+    of the panel's current feed, which IS the current truth; the guard exists
+    for deliveries that can arrive out of order, not for a fresh sweep.
+    """
     ref = str(item["id"])
     to_payload = _payload_fn(kind)
     existing = (
@@ -247,7 +255,7 @@ async def _upsert_story(db: AsyncSession, kind: str, item: dict) -> tuple[int, i
     # Replay/ordering guard: never overwrite with a version that isn't newer.
     old_stamp = (existing.raw or {}).get("updated_at")
     new_stamp = item.get("updated_at")
-    if new_stamp and old_stamp and new_stamp <= old_stamp:
+    if not trust_payload and new_stamp and old_stamp and new_stamp <= old_stamp:
         return 0, 0
     new_payload = to_payload(item)
     if existing.payload == new_payload and existing.status == "active":
@@ -260,10 +268,20 @@ async def _upsert_story(db: AsyncSession, kind: str, item: dict) -> tuple[int, i
     return 0, 1
 
 
-async def _reconcile_retractions(db: AsyncSession) -> int:
-    """Poll fallback for missed script.retracted webhooks: any active id we
-    hold that is no longer in the approved feed has been retracted."""
-    retracted = 0
+async def _reconcile_feeds(db: AsyncSession) -> tuple[int, int]:
+    """The full read of every feed, for the two things a cursor cannot do.
+
+    Retractions: any active id we hold that is no longer in the panel's feed
+    has been withdrawn (the poll fallback for a missed script.retracted).
+
+    Corrections: the panel composes some of what it sends — X threads are
+    built from its posts on read — so a fix on its side changes the text
+    without touching `updated_at`, and an incremental sync would never see it.
+    This pass already holds every current item, so it re-upserts them with the
+    replay guard off. Unchanged payloads write nothing, so the cost is a
+    comparison per item.
+    """
+    retracted = refreshed = 0
     for feed, kind in _FEED_KINDS.items():
         approved_ids: set[str] = set()
         page = 1
@@ -271,6 +289,11 @@ async def _reconcile_retractions(db: AsyncSession) -> int:
             data = await panel.list_scripts(feed, page=page, limit=100)
             items = data.get("items", [])
             approved_ids |= {str(i["id"]) for i in items if i.get("id") is not None}
+            for item in items:
+                if item.get("id") is None:
+                    continue
+                _created, updated = await _upsert_story(db, kind, item, trust_payload=True)
+                refreshed += updated
             # Terminate ONLY on a short page — a missing/zero `total` must not
             # truncate the sweep and mass-retract everything beyond page 1.
             if len(items) < 100:
@@ -314,7 +337,9 @@ async def _reconcile_retractions(db: AsyncSession) -> int:
     await db.commit()
     if retracted:
         logger.info("Retired %d retracted stories", retracted)
-    return retracted
+    if refreshed:
+        logger.info("Refreshed %d stories the panel had recomposed", refreshed)
+    return retracted, refreshed
 
 
 async def apply_webhook_event(db: AsyncSession, event: str, item: dict) -> dict:
