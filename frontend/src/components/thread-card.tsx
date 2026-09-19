@@ -19,6 +19,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   deleteTweetImage,
+  fetchMe,
   fetchTweetImage,
   uploadTweetImage,
   type StoryPayload,
@@ -118,6 +119,10 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
   const [imageOrders, setImageOrders] = useState<number[]>(story.image_tweets ?? []);
   const fileRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
+  // The preview is of the creator's own account, not Stalvian's — they are
+  // the one posting it. Already in the cache from the app shell, so this
+  // costs no request.
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
 
   const active = tweets[Math.min(index, tweets.length - 1)];
   const order = active?.order ?? 1;
@@ -187,8 +192,6 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
         )}
       </div>
 
-      <h3 className="display-xs max-w-[720px] text-ink">{story.title || story.headline}</h3>
-
       {tweets.length === 0 && (
         <p className="text-[15px] leading-5 text-slate-500">
           This thread has no text yet — check back shortly.
@@ -201,6 +204,8 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
               arrows sit on the card's own edges however wide it renders. */}
           <div className="relative">
           <TweetPreview
+            name={me?.name}
+            handle={me?.handle}
             age={compactAge(story.published_at || story.created_at)}
             text={active.text}
             media={

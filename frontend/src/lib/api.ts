@@ -523,21 +523,6 @@ export const markFeedSeen = (key: string) =>
 export const fetchFeed = (key: string, page = 1) =>
   api.get(`/api/feed/${key}`, { params: { page } }).then((r) => asList<StoryPayload>(r.data));
 
-/** What one manual sync did. `errors` is per panel feed: a feed the panel
-    refused is why that tab is empty, and saying so beats an empty page. */
-export interface FeedRefresh {
-  status: "ok" | "error";
-  detail?: string;
-  cooldown?: boolean;
-  created?: number;
-  updated?: number;
-  retracted?: number;
-  errors?: Record<string, string>;
-}
-
-export const refreshFeeds = () =>
-  api.post<FeedRefresh>("/api/feed/refresh", {}, { timeout: 120_000 }).then((r) => r.data);
-
 // ---------- Thread images ----------
 // The panel never sends its own imagery, so the picture on a tweet is the
 // creator's. It comes back as a data URL because this API is reached with a

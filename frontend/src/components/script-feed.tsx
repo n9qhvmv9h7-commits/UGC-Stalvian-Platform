@@ -14,8 +14,7 @@
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
-import { fetchFeed, fetchFeedTypes, markFeedSeen, refreshFeeds } from "@/lib/api";
+import { fetchFeed, fetchFeedTypes, markFeedSeen } from "@/lib/api";
 import { Button, Dropdown, EmptyState, Eyebrow, Spinner } from "@/components/ui";
 import { ScriptCard } from "@/components/script-card";
 import { ThreadCard } from "@/components/thread-card";
@@ -95,43 +94,6 @@ function ScriptFeed({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeKey, loaded, unreadHere]);
 
-  /* Content is pushed to us by the panel, so there is normally nothing to
-     pull — but "nothing here yet" and "the panel turned us away" look
-     identical from this page, and only one of them is worth waiting out.
-     This asks now and says which one it was. */
-  const refresh = useMutation({
-    mutationFn: refreshFeeds,
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["feed"] });
-      queryClient.invalidateQueries({ queryKey: ["feed-types"] });
-      queryClient.invalidateQueries({ queryKey: ["feed-preview"] });
-      if (result.status === "error") {
-        toast.error(result.detail || "The Stalvian engine could not be reached");
-        return;
-      }
-      // Only the content feeds matter here; the albums catalog and the
-      // retraction sweep are not what this page shows.
-      const failed = Object.entries(result.errors ?? {}).filter(
-        ([feed]) => feed !== "albums" && feed !== "retractions"
-      );
-      if (failed.length > 0) {
-        toast.error(`Some feeds could not be fetched: ${failed[0][1]}`);
-        return;
-      }
-      if (result.cooldown) {
-        toast(`Just checked — try again in a minute.`);
-        return;
-      }
-      const created = result.created ?? 0;
-      toast.success(
-        created > 0
-          ? `${created} new ${created === 1 ? noun.replace(/s$/, "") : noun}`
-          : `No new ${noun} yet`
-      );
-    },
-    onError: () => toast.error(`Could not check for new ${noun}`),
-  });
-
   return (
     <div className="flex flex-col gap-12">
       <div className="flex flex-wrap items-end justify-between gap-6">
@@ -163,7 +125,7 @@ function ScriptFeed({
       )}
 
       {types && types.length > 0 && active && (
-        <div className="-mb-8 flex flex-wrap items-center gap-2">
+        <div className="-mb-8 flex">
           <Dropdown
             value={active.key}
             onChange={(key) => router.replace(`${basePath}?type=${key}`, { scroll: false })}
@@ -173,15 +135,6 @@ function ScriptFeed({
             }))}
             icon="ph-squares-four"
           />
-          <Button
-            kind="secondary"
-            size="s"
-            icon="ph-arrows-clockwise"
-            onClick={() => refresh.mutate()}
-            disabled={refresh.isPending}
-          >
-            {refresh.isPending ? "Checking…" : `Check for new ${noun}`}
-          </Button>
         </div>
       )}
 

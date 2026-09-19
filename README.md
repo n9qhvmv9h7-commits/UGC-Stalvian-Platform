@@ -33,8 +33,10 @@ Every creator is one of two **account types**, chosen by the admin at invite
 | Earnings | views pay + client referrals | the same, on post views |
 
 Threads are previewed the way the Marketing Panel previews them — the X card,
-one tweet at a time, dots, an Actions menu — rebuilt in this project's design
-system (`components/tweet-preview.tsx`). The panel never forwards its own
+one tweet at a time, dots and arrows, an Actions menu, two to a row on a wide
+screen — rebuilt in this project's design system
+(`components/tweet-preview.tsx`). The account on the card is the creator's
+own (name, handle, initials), since they are the one posting it. The panel never forwards its own
 imagery, so the picture on a tweet is the creator's: Actions › Upload a
 picture stores it per creator against that tweet (`thread_images`,
 `/api/threads/{story}/tweets/{order}/image`, 4 MB, PNG/JPEG/WebP/GIF). It

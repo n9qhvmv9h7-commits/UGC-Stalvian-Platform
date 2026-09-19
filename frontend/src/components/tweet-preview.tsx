@@ -9,9 +9,11 @@
    order and the engagement bar are the panel's, because the two apps are
    previewing the same post and should not disagree about what it looks like.
 
-   The engagement counts the panel shows are deliberately left out. There they
-   are set dressing on a design mock; here the same numbers would sit on a
-   creator's own unposted draft, next to the real view counts that pay them. */
+   Two things the panel shows are deliberately left out, because here the
+   account is the creator's own rather than Stalvian's. Its placeholder
+   engagement counts would sit on an unposted draft next to the real view
+   counts that pay them, and its verified badge would award a checkmark we
+   have no way of knowing the creator has. */
 
 import type { ReactNode } from "react";
 
@@ -66,40 +68,46 @@ function Stat({ icon }: { icon: string }) {
   return <i className={`ph ${icon} text-[18px] text-slate-400`} />;
 }
 
+/** Up to two initials for the avatar — creators have no picture on file. */
+function initials(name?: string | null): string {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+}
+
 export function TweetPreview({
-  name = "Stalvian",
-  handle = "@stalvian",
+  name,
+  handle,
   age,
   text,
   media,
 }: {
-  name?: string;
-  handle?: string;
+  /** The creator posting it. Falls back while the profile is loading. */
+  name?: string | null;
+  /** Their handle, without the @. Omitted entirely when they have not saved
+      one — an invented handle would be the one wrong thing on a preview whose
+      whole job is to show them their own post. */
+  handle?: string | null;
   /** Compact age shown after the handle, X style. */
   age?: string;
   text: string;
   /** The image inside the tweet. Omit for a tweet with no media. */
   media?: ReactNode;
 }) {
+  const display = name?.trim() || "Your account";
   return (
     <div className="w-full max-w-[598px] rounded-[16px] border border-ink-500 bg-ink px-4 py-3 leading-[1.3] text-white">
       <div className="flex gap-3">
-        {/* Avatar — the globe, cropped out of the left of the wordmark. */}
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ink-700">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/assets/stalvian-logo.svg"
-            alt=""
-            className="h-[62%] w-[62%] object-cover object-left"
-          />
+        {/* Avatar — the creator's initials; we hold no picture of them. */}
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-ink-700 text-[15px] font-bold text-white">
+          {initials(name)}
         </div>
 
         <div className="min-w-0 flex-1">
           {/* Header */}
           <div className="flex items-center gap-1">
-            <span className="font-bold text-white">{name}</span>
-            <i className={`ph-fill ph-seal-check text-[17px] ${LINK}`} aria-label="Verified" />
-            <span className="text-slate-400">{handle}</span>
+            <span className="truncate font-bold text-white">{display}</span>
+            {handle && <span className="truncate text-slate-400">@{handle.replace(/^@/, "")}</span>}
             {age && (
               <>
                 <span className="text-slate-400">·</span>
