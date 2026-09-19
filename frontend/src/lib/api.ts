@@ -126,6 +126,9 @@ export interface StoryPayload {
   /** X threads (tweet accounts): the post as tweets, in order. A story with
       tweets has no scenes — it is posted, not shot. */
   tweets?: Tweet[];
+  /** Which tweets this creator has attached a picture to (1-based orders).
+      The bytes are fetched per tweet, only for the one on screen. */
+  image_tweets?: number[];
   published_at?: string | null;
   created_at?: string | null;
 }
@@ -534,6 +537,35 @@ export interface FeedRefresh {
 
 export const refreshFeeds = () =>
   api.post<FeedRefresh>("/api/feed/refresh", {}, { timeout: 120_000 }).then((r) => r.data);
+
+// ---------- Thread images ----------
+// The panel never sends its own imagery, so the picture on a tweet is the
+// creator's. It comes back as a data URL because this API is reached with a
+// Bearer token, which an <img src> cannot send.
+
+export interface TweetImage {
+  tweet_order: number;
+  size: number;
+  data_url: string;
+}
+
+export const fetchTweetImage = (storyId: number, order: number) =>
+  api
+    .get<TweetImage>(`/api/threads/${storyId}/tweets/${order}/image`)
+    .then((r) => r.data);
+
+export const uploadTweetImage = (storyId: number, order: number, file: File) => {
+  const body = new FormData();
+  body.append("file", file);
+  return api
+    .put<TweetImage>(`/api/threads/${storyId}/tweets/${order}/image`, body, {
+      timeout: 60_000,
+    })
+    .then((r) => r.data);
+};
+
+export const deleteTweetImage = (storyId: number, order: number) =>
+  api.delete(`/api/threads/${storyId}/tweets/${order}/image`).then((r) => r.data);
 
 // ---------- Connected social accounts ----------
 

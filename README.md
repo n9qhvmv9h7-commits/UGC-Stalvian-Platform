@@ -32,6 +32,16 @@ Every creator is one of two **account types**, chosen by the admin at invite
 | Submissions | My Videos — TikTok, Instagram, YouTube links | My Posts — X links (`x.com/…/status/…`, `t.co` resolved) |
 | Earnings | views pay + client referrals | the same, on post views |
 
+Threads are previewed the way the Marketing Panel previews them — the X card,
+one tweet at a time, dots, an Actions menu — rebuilt in this project's design
+system (`components/tweet-preview.tsx`). The panel never forwards its own
+imagery, so the picture on a tweet is the creator's: Actions › Upload a
+picture stores it per creator against that tweet (`thread_images`,
+`/api/threads/{story}/tweets/{order}/image`, 4 MB, PNG/JPEG/WebP/GIF). It
+comes back as a data URL because this API is reached with a Bearer token that
+an `<img src>` cannot send, and is fetched only for the tweet on screen; the
+feed just lists which tweets have one.
+
 Both surfaces are paid by the same formula on the same `video_submissions`
 table — a submission's `platform` says which surface it came from, and
 `view_tracker.SURFACE_PLATFORMS` decides which links an account may submit

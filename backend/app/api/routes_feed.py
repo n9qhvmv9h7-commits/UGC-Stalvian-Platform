@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import get_current_approved_creator
 from app.database import get_db
-from app.models import Creator, FeedRead, Story
+from app.models import Creator, FeedRead, Story, ThreadImage
 from app.services.stories import localized_payload, sync_all
 from app.services.panel_client import PanelError
 
@@ -129,6 +129,22 @@ async def _feed(
         .scalars()
         .all()
     )
+    # Which tweets this creator has already attached a picture to. One query
+    # for the page: the bytes are fetched per tweet, only for the one on
+    # screen, so a feed of threads never drags every image down with it.
+    images: dict[int, list[int]] = {}
+    if rows:
+        image_rows = (
+            await db.execute(
+                select(ThreadImage.story_id, ThreadImage.tweet_order).where(
+                    ThreadImage.creator_id == creator.id,
+                    ThreadImage.story_id.in_([s.id for s in rows]),
+                )
+            )
+        ).all()
+        for story_id, order in image_rows:
+            images.setdefault(story_id, []).append(order)
+
     items = []
     for story in rows:
         payload = await localized_payload(db, story, creator.language)
@@ -138,6 +154,7 @@ async def _feed(
                 "kind": story.kind,
                 "language": creator.language,
                 "published_at": story.published_at.isoformat() if story.published_at else None,
+                "image_tweets": sorted(images.get(story.id, [])),
                 **payload,
             }
         )

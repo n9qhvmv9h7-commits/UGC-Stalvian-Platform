@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -90,6 +91,34 @@ class Story(Base):
     raw: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     translations: Mapped[dict] = mapped_column(JSON, default=dict)  # {lang: payload}
     published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ThreadImage(Base):
+    """The picture a creator attached to one tweet of a thread.
+
+    The panel never forwards its own imagery — it is inline base64 that its
+    webhook layer strips, and creators supply their own visuals anyway — so
+    this is that visual. Stored per creator, because two creators working the
+    same thread each choose their own picture, and served back as a data URL
+    rather than a file: the app talks to this API with a Bearer token, which
+    an <img src> cannot send, and a public image URL would leak the creator's
+    unpublished work.
+    """
+
+    __tablename__ = "thread_images"
+    __table_args__ = (
+        UniqueConstraint("creator_id", "story_id", "tweet_order", name="uq_thread_image"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("creators.id"), index=True)
+    story_id: Mapped[int] = mapped_column(ForeignKey("stories.id"), index=True)
+    # 1-based position in the thread, matching payload["tweets"][n]["order"].
+    tweet_order: Mapped[int] = mapped_column(Integer)
+    content_type: Mapped[str] = mapped_column(String(64))
+    data: Mapped[bytes] = mapped_column(LargeBinary)
+    size: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

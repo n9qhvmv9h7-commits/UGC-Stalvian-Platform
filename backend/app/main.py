@@ -289,6 +289,7 @@ app.add_middleware(
 
 from app.api.routes_auth import router as auth_router
 from app.api.routes_stories import router as stories_router
+from app.api.routes_threads import router as threads_router
 from app.api.routes_feed import router as feed_router
 from app.api.routes_videos import router as videos_router
 from app.api.routes_earnings import router as earnings_router
@@ -300,6 +301,7 @@ from app.api.routes_social import router as social_router
 
 app.include_router(auth_router)
 app.include_router(stories_router)
+app.include_router(threads_router)
 app.include_router(feed_router)
 app.include_router(videos_router)
 app.include_router(earnings_router)
