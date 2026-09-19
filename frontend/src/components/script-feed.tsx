@@ -29,6 +29,10 @@ export interface ScriptFeedProps {
   blurb: string;
   /** What one item is called in the copy: "scripts" to shoot, "threads" to post. */
   noun?: string;
+  /** Cards per row on a wide screen. A tweet card is 598px at its widest, so
+      threads sit two-up the way the panel's tweet tabs do; a video script is
+      a full-width read and stays one-up. */
+  columns?: 1 | 2;
 }
 
 function ScriptFeed({
@@ -38,6 +42,7 @@ function ScriptFeed({
   headline,
   blurb,
   noun = "scripts",
+  columns = 1,
 }: ScriptFeedProps) {
   const router = useRouter();
   const params = useSearchParams();
@@ -190,7 +195,13 @@ function ScriptFeed({
 
       {/* A story with tweets is posted, not shot: the card follows the content,
           so one feed component serves both surfaces. */}
-      <div className="flex flex-col gap-4">
+      <div
+        className={
+          columns === 2
+            ? "grid grid-cols-1 gap-x-8 gap-y-10 xl:grid-cols-2"
+            : "flex flex-col gap-4"
+        }
+      >
         {items.map((story) =>
           story.tweets?.length ? (
             <ThreadCard key={story.id} story={story} />

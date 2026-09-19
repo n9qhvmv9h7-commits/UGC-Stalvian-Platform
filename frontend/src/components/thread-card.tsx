@@ -197,6 +197,9 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
 
       {active && (
         <div className="flex w-full max-w-[598px] flex-col gap-3">
+          {/* The card and its arrows share one positioning context, so the
+              arrows sit on the card's own edges however wide it renders. */}
+          <div className="relative">
           <TweetPreview
             age={compactAge(story.published_at || story.created_at)}
             text={active.text}
@@ -216,6 +219,31 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
               </div>
             }
           />
+
+          {/* Step through the thread from the card itself. Each side appears
+              only when there is somewhere to go, so the arrows also say where
+              in the thread you are. */}
+          {index > 0 && (
+            <button
+              type="button"
+              onClick={() => setIndex(index - 1)}
+              aria-label="Previous tweet"
+              className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
+            >
+              <i className="ph ph-caret-left text-[18px]" />
+            </button>
+          )}
+          {index < tweets.length - 1 && (
+            <button
+              type="button"
+              onClick={() => setIndex(index + 1)}
+              aria-label="Next tweet"
+              className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
+            >
+              <i className="ph ph-caret-right text-[18px]" />
+            </button>
+          )}
+          </div>
 
           {/* Dots — one per tweet, the panel's thread pager */}
           {tweets.length > 1 && (

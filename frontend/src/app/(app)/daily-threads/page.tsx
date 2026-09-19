@@ -15,6 +15,7 @@ export default function DailyThreadsPage() {
       headline="Fresh threads, every day."
       blurb="Every thread comes from real moves by politicians, hedge funds and insiders. Pick a feed, copy the thread, post it — new threads arrive on their own."
       noun="threads"
+      columns={2}
     />
   );
 }
