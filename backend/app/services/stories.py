@@ -3,7 +3,7 @@ import asyncio
 import logging
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -183,7 +183,7 @@ async def sync_all(db: AsyncSession) -> dict:
     return result
 
 
-async def _sync_feed(db: AsyncSession, feed: str) -> tuple[int, int]:
+async def _sync_feed(db: AsyncSession, feed: str) -> tuple[int, int]:  # noqa: C901
     """Incremental sync of one approved feed (updated_since cursor). Items
     can legitimately reappear when edited + re-approved -> upsert."""
     kind = _FEED_KINDS[feed]
@@ -206,6 +206,11 @@ async def _sync_feed(db: AsyncSession, feed: str) -> tuple[int, int]:
             c, u = await _upsert_story(db, kind, item)
             created += c
             updated += u
+        # Same reason as the sweep: land each page rather than carrying the
+        # whole feed in one session. The cursor below only moves once every
+        # page is in, so a crash mid-feed re-reads it rather than skipping it.
+        await db.commit()
+        db.expunge_all()
         # The feed is newest-first, so the cursor only advances after EVERY
         # page of the changed set is consumed — a partial read would skip the
         # older pages forever. A short page means the set is exhausted; never
@@ -274,12 +279,19 @@ async def _reconcile_feeds(db: AsyncSession) -> tuple[int, int]:
     Retractions: any active id we hold that is no longer in the panel's feed
     has been withdrawn (the poll fallback for a missed script.retracted).
 
-    Corrections: the panel composes some of what it sends — X threads are
-    built from its posts on read — so a fix on its side changes the text
-    without touching `updated_at`, and an incremental sync would never see it.
-    This pass already holds every current item, so it re-upserts them with the
-    replay guard off. Unchanged payloads write nothing, so the cost is a
-    comparison per item.
+    Corrections, for the thread feeds only: the panel composes X threads from
+    its posts on read, so a fix on its side changes the text without touching
+    `updated_at` and an incremental sync would never see it. This pass already
+    holds every current item, so it re-upserts those with the replay guard
+    off. Unchanged payloads write nothing, so the cost is a comparison per
+    item.
+
+    MEMORY IS THE CONSTRAINT HERE, not time. The tweet feeds run to thousands
+    of posts — tweets_breaking alone is 18+ pages of 100 — so anything this
+    loop keeps, it keeps thousands of times over on a 512 MB instance. Every
+    page is therefore committed and expunged before the next is fetched, and
+    the retraction check reads three columns rather than whole Story rows with
+    their payload and raw panel response attached.
     """
     retracted = refreshed = 0
     for feed, kind in _FEED_KINDS.items():
@@ -289,29 +301,39 @@ async def _reconcile_feeds(db: AsyncSession) -> tuple[int, int]:
             data = await panel.list_scripts(feed, page=page, limit=100)
             items = data.get("items", [])
             approved_ids |= {str(i["id"]) for i in items if i.get("id") is not None}
-            for item in items:
-                if item.get("id") is None:
-                    continue
-                _created, updated = await _upsert_story(db, kind, item, trust_payload=True)
-                refreshed += updated
+            # Only the thread feeds are recomposed on read; a script feed is
+            # stored as generated, so an edit there moves `updated_at` and the
+            # incremental sync already has it. No reason to re-compare
+            # thousands of scripts every half hour.
+            if is_thread_kind(kind):
+                for item in items:
+                    if item.get("id") is None:
+                        continue
+                    _created, updated = await _upsert_story(
+                        db, kind, item, trust_payload=True
+                    )
+                    refreshed += updated
+            # Land this page and let go of it. Holding every item of every
+            # feed until one commit at the end is what an OOM kill looks like.
+            await db.commit()
+            db.expunge_all()
             # Terminate ONLY on a short page — a missing/zero `total` must not
             # truncate the sweep and mass-retract everything beyond page 1.
             if len(items) < 100:
                 break
             page += 1
+        # Three columns, not whole rows: the payload and the stored panel
+        # response are not needed to decide a status, and there are thousands
+        # of these.
         rows = (
-            (
-                await db.execute(
-                    select(Story).where(
-                        Story.kind == kind,
-                        Story.creator_id.is_(None),
-                        Story.status.in_(("active", "retracted")),
-                    )
+            await db.execute(
+                select(Story.id, Story.panel_ref, Story.status).where(
+                    Story.kind == kind,
+                    Story.creator_id.is_(None),
+                    Story.status.in_(("active", "retracted")),
                 )
             )
-            .scalars()
-            .all()
-        )
+        ).all()
         active = [r for r in rows if r.status == "active"]
         # Safety valve: an empty approved feed while we hold active content is
         # far more likely a panel incident (reset DB, dormant config) than a
@@ -324,17 +346,31 @@ async def _reconcile_feeds(db: AsyncSession) -> tuple[int, int]:
                 len(active),
             )
             continue
-        for row in rows:
-            if not row.panel_ref:
-                continue
-            if row.status == "active" and row.panel_ref not in approved_ids:
-                row.status = "retracted"
-                retracted += 1
-            elif row.status == "retracted" and row.panel_ref in approved_ids:
-                # Self-healing: a falsely retracted story (transient partial
-                # read, misrouted webhook) comes back on the next sweep.
-                row.status = "active"
-    await db.commit()
+        gone = [
+            r.id
+            for r in rows
+            if r.panel_ref and r.status == "active" and r.panel_ref not in approved_ids
+        ]
+        # Self-healing: a falsely retracted story (transient partial read,
+        # misrouted webhook) comes back on the next sweep.
+        back = [
+            r.id
+            for r in rows
+            if r.panel_ref and r.status == "retracted" and r.panel_ref in approved_ids
+        ]
+        for ids, status in ((gone, "retracted"), (back, "active")):
+            # Chunked: an IN list of several thousand ids is a statement no
+            # database enjoys parsing.
+            for start in range(0, len(ids), 500):
+                await db.execute(
+                    update(Story)
+                    .where(Story.id.in_(ids[start : start + 500]))
+                    .values(status=status)
+                )
+        retracted += len(gone)
+        await db.commit()
+        db.expunge_all()
+
     if retracted:
         logger.info("Retired %d retracted stories", retracted)
     if refreshed:
