@@ -3,32 +3,54 @@
 /* ThreadCard — one X thread, shown the way the Marketing Panel shows it.
 
    The panel previews a thread as a stack of one tweet at a time: the X card,
-   dots underneath, an Actions menu and "Tweet n/N". Creators and the panel
-   team are looking at the same post, so this page is laid out the same way —
-   in this project's design system, inside the dashed editorial card the rest
-   of the app uses.
+   dots underneath, an Actions menu and "Tweet n/N". Under each tweet sits the
+   card the panel draws for it — a price chart, three logos, the buyers'
+   faces — and the server tells this component which (`story.media`), so the
+   card never has to know what kind of post it is looking at.
 
-   The picture is the creator's own: the panel keeps its imagery (it is inline
-   base64 its forwarding layer strips) and creators shoot or pick their own.
-   Click the media area, or use Actions, and it is stored against that tweet
-   for this creator. */
+   Pictures are the creator's own: the panel keeps its imagery to itself and
+   creators shoot or pick theirs. Every picture slot on a card is one upload,
+   stored against that tweet for this creator, and the finished card exports
+   as a PNG at the panel's design size so it can be posted as-is. */
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { toPng } from "html-to-image";
 import {
   deleteTweetImage,
   fetchMe,
-  fetchTweetImage,
+  fetchTweetImages,
   uploadTweetImage,
   type StoryPayload,
   type Tweet,
+  type TweetImage,
+  type TweetMedia,
 } from "@/lib/api";
 import { formatDate } from "@/lib/format";
 import { Badge, Button } from "@/components/ui";
 import { ViralityMeter } from "@/components/script-card";
 import { TweetPreview, compactAge } from "@/components/tweet-preview";
+import {
+  CompanyChartCard,
+  DESIGN_H,
+  DESIGN_W,
+  DualImage,
+  InsiderFacesCard,
+  LIST_W,
+  PHOTO_W,
+  PictureSlot,
+  PositionsTableCard,
+  RankedListCard,
+  ScaledMedia,
+  SplitMedia,
+  SQ_H,
+  SQ_W,
+  SquareChartCard,
+  ThreeLogoCard,
+  WIDE_W,
+} from "@/components/tweet-media";
 
 /* X's limit. Counted in code points, which matches X for plain text; links
    and some emoji count differently there, so this is a guide, not a gate. */
@@ -54,17 +76,20 @@ function postIntentUrl(text: string): string {
 function MenuItem({
   icon,
   onClick,
+  disabled,
   children,
 }: {
   icon: string;
   onClick: () => void;
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-[14px] leading-5 text-slate-500 hover:bg-bone-100 hover:text-ink"
+      disabled={disabled}
+      className="flex w-full cursor-pointer items-center gap-3 px-4 py-2 text-left text-[14px] leading-5 text-slate-500 hover:bg-bone-100 hover:text-ink disabled:cursor-default disabled:opacity-50"
     >
       <i className={`ph ${icon} text-[16px]`} />
       {children}
@@ -76,8 +101,6 @@ function MenuItem({
    side by side on this page read as one family. */
 function ActionsMenu({ children }: { children: (close: () => void) => React.ReactNode }) {
   const [open, setOpen] = useState(false);
-  // Escape closes it, like the feed's Dropdown — the overlay below catches
-  // clicks, but a keyboard user should not be trapped in an open menu.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
@@ -98,7 +121,7 @@ function ActionsMenu({ children }: { children: (close: () => void) => React.Reac
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full z-20 mt-2 min-w-[230px] overflow-hidden rounded-[8px] border border-bone-200 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(1,5,16,0.3)]">
+          <div className="absolute left-0 top-full z-20 mt-2 min-w-[240px] overflow-hidden rounded-[8px] border border-bone-200 bg-white py-1 shadow-[0_12px_32px_-12px_rgba(1,5,16,0.3)]">
             {children(() => setOpen(false))}
           </div>
         </>
@@ -107,41 +130,115 @@ function ActionsMenu({ children }: { children: (close: () => void) => React.Reac
   );
 }
 
+const CATEGORY_TONE: Record<string, "ink" | "positive" | "warn" | "neutral"> = {
+  macro: "ink",
+  stock: "positive",
+  fda: "warn",
+  gov: "neutral",
+  caught: "positive",
+  movers: "ink",
+};
+
+/* Every card is drawn at its native size and exported at it. */
+function nativeSize(kind: TweetMedia["kind"]): { w: number; h: number } {
+  switch (kind) {
+    case "list_buys":
+    case "list_sells":
+      return { w: LIST_W, h: LIST_W };
+    case "square_chart":
+    case "square_plain":
+      return { w: SQ_W, h: SQ_H };
+    case "chart_wide":
+      return { w: WIDE_W, h: DESIGN_H };
+    default:
+      return { w: DESIGN_W, h: DESIGN_H };
+  }
+}
+
+/* Which upload slots a card offers, and what to call them in the menu. */
+function slotsFor(media: TweetMedia | undefined, story: StoryPayload): { slot: number; label: string }[] {
+  switch (media?.kind) {
+    case "logos":
+      return (story.stocks ?? []).slice(0, 3).map((s, i) => ({ slot: i, label: `$${s.ticker} logo` }));
+    case "faces":
+      return (story.buyers ?? []).slice(0, 5).map((b, i) => ({ slot: i, label: `${b.name} photo` }));
+    case "chart":
+      return [{ slot: 0, label: "company picture" }, { slot: 1, label: "company icon" }];
+    case "chart_entry":
+      return [{ slot: 0, label: "investor picture" }, { slot: 1, label: "company icon" }];
+    case "chart_month":
+      return [{ slot: 0, label: "company logo" }];
+    case "chart_wide":
+      return [{ slot: 1, label: "company icon" }];
+    case "dual_image":
+      return [{ slot: 0, label: "left image" }, { slot: 1, label: "right image" }];
+    case "holdings":
+      return [{ slot: 0, label: "fund / manager photo" }];
+    case "list_buys":
+      return (story.top_buys ?? []).slice(0, 5).map((r, i) => ({ slot: i, label: `$${r.ticker} icon` }));
+    case "list_sells":
+      return (story.top_sells ?? []).slice(0, 5).map((r, i) => ({ slot: i, label: `$${r.ticker} icon` }));
+    case "square_chart":
+      return [{ slot: 0, label: "person photo" }, { slot: 1, label: "company icon" }];
+    case "square_plain":
+      return [{ slot: 1, label: "company icon" }];
+    case "none":
+      return [];
+    default:
+      return [{ slot: 0, label: "picture" }];
+  }
+}
+
 export function ThreadCard({ story }: { story: StoryPayload }) {
-  const tweets = [...(story.tweets ?? [])].sort((a, b) => a.order - b.order);
+  const tweets = useMemo(
+    () => [...(story.tweets ?? [])].sort((a, b) => a.order - b.order),
+    [story.tweets]
+  );
   const sources = [...new Set((story.sources ?? []).map((s) => s.trim()).filter(Boolean))];
 
   const [index, setIndex] = useState(0);
   const [sourcesOpen, setSourcesOpen] = useState(false);
-  /* Which tweets carry a picture. Seeded from the feed so the card knows
-     without asking for any bytes, then kept current by this card's own
-     uploads — the feed row is a page-load-old snapshot. */
-  const [imageOrders, setImageOrders] = useState<number[]>(story.image_tweets ?? []);
+  const [downloading, setDownloading] = useState(false);
+  /* Which (tweet, slot) pairs carry a picture. Seeded from the feed so the
+     card knows without asking for any bytes, then kept current by this
+     card's own uploads — the feed row is a page-load-old snapshot. */
+  const [known, setKnown] = useState<Set<string>>(
+    () => new Set((story.images ?? []).map((i) => `${i.order}:${i.slot}`))
+  );
   const fileRef = useRef<HTMLInputElement>(null);
+  const pendingSlot = useRef(0);
+  const exportRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   // The preview is of the creator's own account, not Stalvian's — they are
-  // the one posting it. Already in the cache from the app shell, so this
-  // costs no request.
+  // the one posting it. Already in the cache from the app shell.
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
 
   const active = tweets[Math.min(index, tweets.length - 1)];
   const order = active?.order ?? 1;
-  const hasImage = imageOrders.includes(order);
+  const media = story.media?.[Math.min(index, tweets.length - 1)] ?? { kind: "image" as const };
+  const slots = slotsFor(media, story);
+  const hasAny = [...known].some((k) => k.startsWith(`${order}:`));
 
-  // Only the tweet on screen fetches its picture, so a feed of threads never
+  // Only the tweet on screen fetches its pictures, so a feed of threads never
   // pulls every image at once.
-  const { data: image } = useQuery({
-    queryKey: ["tweet-image", story.id, order],
-    queryFn: () => fetchTweetImage(story.id, order),
-    enabled: hasImage,
+  const { data: images } = useQuery({
+    queryKey: ["tweet-images", story.id, order],
+    queryFn: () => fetchTweetImages(story.id, order),
+    enabled: hasAny,
     staleTime: Infinity,
   });
+  const urlFor = (slot: number): string | undefined =>
+    images?.find((i) => i.slot === slot)?.data_url;
 
   const upload = useMutation({
-    mutationFn: (file: File) => uploadTweetImage(story.id, order, file),
+    mutationFn: ({ file, slot }: { file: File; slot: number }) =>
+      uploadTweetImage(story.id, order, file, slot),
     onSuccess: (result) => {
-      queryClient.setQueryData(["tweet-image", story.id, order], result);
-      setImageOrders((prev) => (prev.includes(order) ? prev : [...prev, order]));
+      queryClient.setQueryData<TweetImage[]>(["tweet-images", story.id, order], (prev) => [
+        ...(prev ?? []).filter((i) => i.slot !== result.slot),
+        result,
+      ]);
+      setKnown((prev) => new Set(prev).add(`${order}:${result.slot}`));
       toast.success(`Picture added to tweet ${order}`);
     },
     onError: (err: unknown) => {
@@ -151,18 +248,196 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
   });
 
   const remove = useMutation({
-    mutationFn: () => deleteTweetImage(story.id, order),
-    onSuccess: () => {
-      queryClient.removeQueries({ queryKey: ["tweet-image", story.id, order] });
-      setImageOrders((prev) => prev.filter((o) => o !== order));
+    mutationFn: (slot: number) => deleteTweetImage(story.id, order, slot),
+    onSuccess: (_r, slot) => {
+      queryClient.setQueryData<TweetImage[]>(["tweet-images", story.id, order], (prev) =>
+        (prev ?? []).filter((i) => i.slot !== slot)
+      );
+      setKnown((prev) => {
+        const next = new Set(prev);
+        next.delete(`${order}:${slot}`);
+        return next;
+      });
       toast.success(`Picture removed from tweet ${order}`);
     },
     onError: () => toast.error("Could not remove that picture"),
   });
 
-  const pickFile = () => fileRef.current?.click();
+  const pickFile = (slot = 0) => {
+    pendingSlot.current = slot;
+    fileRef.current?.click();
+  };
+
+  /* The un-scaled 1600×900 node, rendered to PNG at 2× — the chart and text
+     are vector so they stay sharp; uploaded photos are as sharp as uploaded. */
+  const download = async () => {
+    if (!exportRef.current) return;
+    setDownloading(true);
+    try {
+      const { w, h } = nativeSize(media.kind);
+      const dataUrl = await toPng(exportRef.current, { width: w, height: h, pixelRatio: 2, cacheBust: true });
+      const link = document.createElement("a");
+      link.download = `${story.ticker || "thread"}-tweet-${order}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch {
+      toast.error("Could not render the image");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const length = active ? [...active.text].length : 0;
   const over = length > TWEET_MAX_CHARS;
+  const stocks = story.stocks ?? [];
+  const buyers = story.buyers ?? [];
+  const company = story.company_name || stocks[0]?.short_name || story.ticker || "";
+
+  const renderMedia = () => {
+    const busy = upload.isPending;
+    switch (media.kind) {
+      case "none":
+        return undefined;
+      case "logos":
+        return (
+          <ScaledMedia ref={exportRef}>
+            <ThreeLogoCard
+              stocks={stocks}
+              logos={[0, 1, 2].map((i) => urlFor(i) ?? stocks[i]?.logo_url ?? undefined)}
+              onPick={(i) => !busy && pickFile(i)}
+            />
+          </ScaledMedia>
+        );
+      case "faces":
+        return (
+          <ScaledMedia ref={exportRef}>
+            <InsiderFacesCard
+              buyers={buyers}
+              photos={buyers.map((b, i) => urlFor(i) ?? b.photo_url ?? undefined)}
+              onPick={(i) => !busy && pickFile(i)}
+            />
+          </ScaledMedia>
+        );
+      case "chart":
+      case "chart_entry":
+      case "chart_month": {
+        const chart = media.kind === "chart_month" ? story.chart_month : story.chart;
+        if (!chart) return undefined;
+        const entry = media.kind === "chart_entry";
+        const photo = urlFor(0);
+        // Slot 1 is the company icon on the card; a movers month card uses
+        // the logo upload for both the photo half and the icon, as the panel does.
+        const icon = media.kind === "chart_month" ? photo : urlFor(1) ?? stocks[0]?.logo_url;
+        return (
+          <ScaledMedia ref={exportRef}>
+            <SplitMedia
+              photoUrl={photo}
+              hint={media.hint ?? "Click to upload a picture"}
+              onUploadClick={() => !busy && pickFile(0)}
+              busy={busy}
+            >
+              <CompanyChartCard
+                companyName={company}
+                ticker={chart.ticker || story.ticker || ""}
+                chart={chart}
+                logoUrl={icon}
+                entryIndex={entry ? chart.entry_index : undefined}
+                entryPhotoUrl={entry ? photo ?? story.featured_buyer?.photo_url ?? undefined : undefined}
+              />
+            </SplitMedia>
+          </ScaledMedia>
+        );
+      }
+      case "chart_wide":
+        if (!story.chart) return undefined;
+        return (
+          <ScaledMedia ref={exportRef} nativeW={WIDE_W} nativeH={DESIGN_H}>
+            <CompanyChartCard
+              companyName={company}
+              ticker={story.chart.ticker || story.ticker || ""}
+              chart={story.chart}
+              logoUrl={urlFor(1) ?? stocks[0]?.logo_url}
+              width={WIDE_W}
+              height={DESIGN_H}
+              iconSize={124}
+            />
+          </ScaledMedia>
+        );
+      case "dual_image":
+        return (
+          <ScaledMedia ref={exportRef}>
+            <DualImage
+              left={urlFor(0)}
+              right={urlFor(1)}
+              onLeft={() => !busy && pickFile(0)}
+              onRight={() => !busy && pickFile(1)}
+              busy={busy}
+            />
+          </ScaledMedia>
+        );
+      case "holdings":
+        return (
+          <ScaledMedia ref={exportRef}>
+            <div style={{ width: DESIGN_W, height: DESIGN_H, display: "flex", background: "#FFFFFF" }}>
+              <PictureSlot
+                url={urlFor(0)}
+                hint={media.hint ?? "Click to upload fund / manager photo"}
+                onClick={() => !busy && pickFile(0)}
+                width={PHOTO_W}
+                height={DESIGN_H}
+                busy={busy}
+              />
+              <PositionsTableCard holdings={story.holdings ?? []} />
+            </div>
+          </ScaledMedia>
+        );
+      case "list_buys":
+      case "list_sells": {
+        const buys = media.kind === "list_buys";
+        const rows = (buys ? story.top_buys : story.top_sells) ?? [];
+        return (
+          <ScaledMedia ref={exportRef} nativeW={LIST_W} nativeH={LIST_W}>
+            <RankedListCard
+              title={buys ? "Top Buys" : "Top Sells"}
+              rows={rows}
+              positive={buys}
+              icons={rows.map((r, i) => urlFor(i) ?? r.icon_url ?? undefined)}
+              onPick={(i) => !busy && pickFile(i)}
+            />
+          </ScaledMedia>
+        );
+      }
+      case "square_chart":
+      case "square_plain":
+        if (!story.chart) return undefined;
+        return (
+          <ScaledMedia ref={exportRef} nativeW={SQ_W} nativeH={SQ_H}>
+            <SquareChartCard
+              headline={(story.headline || story.title || "").replace(/^\s*just\s+in\b\s*:?\s*/i, "")}
+              chart={story.chart}
+              personPhotoUrl={urlFor(0) ?? story.featured_buyer?.photo_url}
+              companyLogoUrl={urlFor(1) ?? stocks[0]?.logo_url}
+              insiderReturnPct={story.insider_return_pct ?? 0}
+              showMarker={media.kind === "square_chart"}
+              source={media.kind === "square_plain" ? story.source_label : undefined}
+              onPickPerson={media.kind === "square_chart" ? () => !busy && pickFile(0) : undefined}
+              onPickLogo={() => !busy && pickFile(1)}
+            />
+          </ScaledMedia>
+        );
+      default:
+        return (
+          <ScaledMedia ref={exportRef}>
+            <PictureSlot
+              url={urlFor(0)}
+              hint={media.hint ?? "Click to upload an image"}
+              onClick={() => !busy && pickFile(0)}
+              busy={busy}
+            />
+          </ScaledMedia>
+        );
+    }
+  };
 
   return (
     <div className="dashed-card flex flex-col gap-5 bg-white p-6 lg:p-8">
@@ -173,7 +448,7 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) upload.mutate(file);
+          if (file) upload.mutate({ file, slot: pendingSlot.current });
           e.target.value = "";
         }}
       />
@@ -181,6 +456,11 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
       {/* Header — badges + timestamp left, virality meter right */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
+          {story.category && story.category !== "trending" && (
+            <Badge tone={CATEGORY_TONE[story.category] ?? "neutral"}>
+              {story.category_label ?? story.category}
+            </Badge>
+          )}
           {story.ticker && <Badge tone="ink">${story.ticker}</Badge>}
           <Badge>
             {tweets.length} tweet{tweets.length === 1 ? "" : "s"}
@@ -192,6 +472,10 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
         )}
       </div>
 
+      {story.title && (
+        <div className="text-[15px] font-medium leading-5 text-ink">{story.title}</div>
+      )}
+
       {tweets.length === 0 && (
         <p className="text-[15px] leading-5 text-slate-500">
           This thread has no text yet — check back shortly.
@@ -200,54 +484,38 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
 
       {active && (
         <div className="flex w-full max-w-[598px] flex-col gap-3">
-          {/* The card and its arrows share one positioning context, so the
-              arrows sit on the card's own edges however wide it renders. */}
           <div className="relative">
-          <TweetPreview
-            name={me?.name}
-            handle={me?.handle}
-            age={compactAge(story.published_at || story.created_at)}
-            text={active.text}
-            media={
-              <div
-                onClick={() => !upload.isPending && pickFile()}
-                className="flex aspect-[16/9] cursor-pointer items-center justify-center bg-black/60"
-              >
-                {upload.isPending ? (
-                  <span className="text-[13px] text-slate-400">Uploading…</span>
-                ) : image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={image.data_url} alt="" className="h-full w-full object-cover" />
-                ) : (
-                  <span className="text-[13px] text-slate-400">Click to upload an image</span>
-                )}
-              </div>
-            }
-          />
+            <TweetPreview
+              name={me?.name}
+              handle={me?.handle}
+              age={compactAge(story.published_at || story.created_at)}
+              text={active.text}
+              media={renderMedia()}
+            />
 
-          {/* Step through the thread from the card itself. Each side appears
-              only when there is somewhere to go, so the arrows also say where
-              in the thread you are. */}
-          {index > 0 && (
-            <button
-              type="button"
-              onClick={() => setIndex(index - 1)}
-              aria-label="Previous tweet"
-              className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
-            >
-              <i className="ph ph-caret-left text-[18px]" />
-            </button>
-          )}
-          {index < tweets.length - 1 && (
-            <button
-              type="button"
-              onClick={() => setIndex(index + 1)}
-              aria-label="Next tweet"
-              className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
-            >
-              <i className="ph ph-caret-right text-[18px]" />
-            </button>
-          )}
+            {/* Step through the thread from the card itself. Each side appears
+                only when there is somewhere to go, so the arrows also say
+                where in the thread you are. */}
+            {index > 0 && (
+              <button
+                type="button"
+                onClick={() => setIndex(index - 1)}
+                aria-label="Previous tweet"
+                className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
+              >
+                <i className="ph ph-caret-left text-[18px]" />
+              </button>
+            )}
+            {index < tweets.length - 1 && (
+              <button
+                type="button"
+                onClick={() => setIndex(index + 1)}
+                aria-label="Next tweet"
+                className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
+              >
+                <i className="ph ph-caret-right text-[18px]" />
+              </button>
+            )}
           </div>
 
           {/* Dots — one per tweet, the panel's thread pager */}
@@ -272,24 +540,42 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
             <ActionsMenu>
               {(close) => (
                 <>
-                  <MenuItem
-                    icon="ph-image"
-                    onClick={() => {
-                      close();
-                      pickFile();
-                    }}
-                  >
-                    {hasImage ? "Replace picture" : "Upload a picture"}
-                  </MenuItem>
-                  {hasImage && (
+                  {slots.map(({ slot, label }) => (
                     <MenuItem
-                      icon="ph-trash"
+                      key={slot}
+                      icon="ph-image"
                       onClick={() => {
                         close();
-                        remove.mutate();
+                        pickFile(slot);
                       }}
                     >
-                      Remove picture
+                      {known.has(`${order}:${slot}`) ? `Replace ${label}` : `Upload ${label}`}
+                    </MenuItem>
+                  ))}
+                  {slots
+                    .filter(({ slot }) => known.has(`${order}:${slot}`))
+                    .map(({ slot, label }) => (
+                      <MenuItem
+                        key={`rm-${slot}`}
+                        icon="ph-trash"
+                        onClick={() => {
+                          close();
+                          remove.mutate(slot);
+                        }}
+                      >
+                        Remove {label}
+                      </MenuItem>
+                    ))}
+                  {media.kind !== "none" && (
+                    <MenuItem
+                      icon="ph-download-simple"
+                      disabled={downloading}
+                      onClick={() => {
+                        close();
+                        download();
+                      }}
+                    >
+                      {downloading ? "Rendering…" : "Download image"}
                     </MenuItem>
                   )}
                   <div className="my-1 border-t border-bone-200" />

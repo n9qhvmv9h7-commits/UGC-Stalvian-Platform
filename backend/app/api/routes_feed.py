@@ -16,6 +16,7 @@ from app.auth import get_current_approved_creator
 from app.database import get_db
 from app.models import Creator, FeedRead, Story, ThreadImage
 from app.services.stories import localized_payload, sync_all
+from app.services.threads import CATEGORY_LABELS
 from app.services.panel_client import PanelError
 
 router = APIRouter(prefix="/api/feed", tags=["feed"])
@@ -65,6 +66,9 @@ FEED_TYPES: list[dict] = [
         "key": "x-breaking",
         "surface": "tweets",
         "kinds": ["x_breaking"],
+        # The panel's four Breaking News subtabs. They arrive on one feed and
+        # are told apart by Story.category; the app offers them as a filter.
+        "categories": ["macro", "stock", "fda", "gov"],
         "label": "Breaking News",
         "description": (
             "Fresh market stories as ready-to-post threads: the headline, the tickers "
@@ -80,6 +84,56 @@ FEED_TYPES: list[dict] = [
         "description": (
             "The trend everyone is talking about, the stock that benefits from it, and "
             "the insider who bought it — three tweets, ready to post."
+        ),
+    },
+    {
+        "key": "x-album-trades",
+        "surface": "tweets",
+        "kinds": ["x_album_trades"],
+        # The panel's two Album Trades covers: "caught the trade" and "movers".
+        "categories": ["caught", "movers"],
+        "label": "Album Trades",
+        "description": (
+            "A politician or fund in Stalvian's albums caught a trade — what they bought, "
+            "when, and what it's worth now — with the chart to prove it."
+        ),
+    },
+    {
+        "key": "x-big-buy",
+        "surface": "tweets",
+        "kinds": ["x_big_buy"],
+        "label": "Big Buy Alerts",
+        "description": (
+            "The largest disclosed purchases: who bought how much of what, the filing "
+            "details, and the company explained."
+        ),
+    },
+    {
+        "key": "x-hedge-fund",
+        "surface": "tweets",
+        "kinds": ["x_hedge_fund"],
+        "label": "Hedge Fund Alerts",
+        "description": (
+            "A fund's fresh 13F: its ten largest positions, then its top buys and top "
+            "sells this quarter."
+        ),
+    },
+    {
+        "key": "x-insider-picks",
+        "surface": "tweets",
+        "kinds": ["x_insider_picks"],
+        "label": "Insider Picks",
+        "description": (
+            "One insider, one stock, one chart: where they bought and what it did since."
+        ),
+    },
+    {
+        "key": "x-stock-news",
+        "surface": "tweets",
+        "kinds": ["x_stock_news"],
+        "label": "Top Movers",
+        "description": (
+            "The biggest movers on the board today, with the reason and the chart."
         ),
     },
 ]
@@ -106,13 +160,20 @@ _last_refresh: float = 0.0
 
 
 async def _feed(
-    db: AsyncSession, creator: Creator, kinds: list[str], page: int, limit: int
+    db: AsyncSession,
+    creator: Creator,
+    kinds: list[str],
+    page: int,
+    limit: int,
+    category: str | None = None,
 ) -> dict:
     """Newest-first across every kind this feed covers, so a feed backed by two
     panel feeds reads as one interleaved list rather than two blocks."""
     base = select(Story).where(
         Story.kind.in_(kinds), Story.creator_id.is_(None), Story.status == "active"
     )
+    if category:
+        base = base.where(Story.category == category)
     rows = (
         (
             await db.execute(
@@ -129,21 +190,24 @@ async def _feed(
         .scalars()
         .all()
     )
-    # Which tweets this creator has already attached a picture to. One query
-    # for the page: the bytes are fetched per tweet, only for the one on
-    # screen, so a feed of threads never drags every image down with it.
-    images: dict[int, list[int]] = {}
+    # Which tweets this creator has already attached pictures to, and in
+    # which slots. One query for the page: the bytes are fetched per tweet,
+    # only for the one on screen, so a feed of threads never drags every
+    # image down with it.
+    images: dict[int, list[dict]] = {}
     if rows:
         image_rows = (
             await db.execute(
-                select(ThreadImage.story_id, ThreadImage.tweet_order).where(
+                select(ThreadImage.story_id, ThreadImage.tweet_order, ThreadImage.slot)
+                .where(
                     ThreadImage.creator_id == creator.id,
                     ThreadImage.story_id.in_([s.id for s in rows]),
                 )
+                .order_by(ThreadImage.tweet_order, ThreadImage.slot)
             )
         ).all()
-        for story_id, order in image_rows:
-            images.setdefault(story_id, []).append(order)
+        for story_id, order, slot in image_rows:
+            images.setdefault(story_id, []).append({"order": order, "slot": slot})
 
     items = []
     for story in rows:
@@ -154,7 +218,7 @@ async def _feed(
                 "kind": story.kind,
                 "language": creator.language,
                 "published_at": story.published_at.isoformat() if story.published_at else None,
-                "image_tweets": sorted(images.get(story.id, [])),
+                "images": images.get(story.id, []),
                 **payload,
             }
         )
@@ -173,10 +237,16 @@ async def feed_types(
     live = Story.creator_id.is_(None), Story.status == "active"
     rows = (
         await db.execute(
-            select(Story.kind, func.count()).where(*live).group_by(Story.kind)
+            select(Story.kind, Story.category, func.count())
+            .where(*live)
+            .group_by(Story.kind, Story.category)
         )
     ).all()
-    counts = {kind: int(n) for kind, n in rows}
+    counts: dict[str, int] = {}
+    category_counts: dict[tuple[str, str | None], int] = {}
+    for kind, category, n in rows:
+        counts[kind] = counts.get(kind, 0) + int(n)
+        category_counts[(kind, category)] = int(n)
 
     seen = {
         r.feed_key: r.last_seen_at
@@ -215,6 +285,16 @@ async def feed_types(
                 "description": t["description"],
                 "count": sum(counts.get(k, 0) for k in t["kinds"]),
                 "unread": sum(unread.get(k, 0) for k in t["kinds"]),
+                # Sub-feeds the app can filter on, with live counts. Empty for
+                # feeds without them, so the app shows no chips.
+                "categories": [
+                    {
+                        "key": c,
+                        "label": CATEGORY_LABELS.get(c, c),
+                        "count": sum(category_counts.get((k, c), 0) for k in t["kinds"]),
+                    }
+                    for c in t.get("categories", [])
+                ],
             }
             for t in types
         ]
@@ -273,8 +353,11 @@ async def feed(
     key: str,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=50),
+    category: str | None = Query(default=None, max_length=16),
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
     feed_type = _feed_for(creator, key)
-    return await _feed(db, creator, feed_type["kinds"], page, limit)
+    if category and category not in feed_type.get("categories", []):
+        raise HTTPException(status_code=404, detail=f"Unknown category: {category}")
+    return await _feed(db, creator, feed_type["kinds"], page, limit, category)

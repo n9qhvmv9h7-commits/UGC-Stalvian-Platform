@@ -54,6 +54,11 @@ function ScriptFeed({
   const requested = params.get("type");
   const active =
     types?.find((t) => t.key === requested) ?? types?.[0] ?? null;
+  // A sub-feed of the active feed (the panel's Breaking News subtabs), also
+  // in the URL. Unknown or absent means the whole feed.
+  const requestedCategory = params.get("category");
+  const category =
+    active?.categories.find((c) => c.key === requestedCategory)?.key ?? null;
 
   const {
     data,
@@ -65,8 +70,8 @@ function ScriptFeed({
     hasNextPage,
     isFetchingNextPage,
   } = useInfiniteQuery({
-    queryKey: ["feed", active?.key],
-    queryFn: ({ pageParam }) => fetchFeed(active!.key, pageParam),
+    queryKey: ["feed", active?.key, category],
+    queryFn: ({ pageParam }) => fetchFeed(active!.key, pageParam, category),
     initialPageParam: 1,
     getNextPageParam: (last) =>
       last.items?.length && last.items.length === last.limit ? last.page + 1 : undefined,
@@ -125,7 +130,7 @@ function ScriptFeed({
       )}
 
       {types && types.length > 0 && active && (
-        <div className="-mb-8 flex">
+        <div className="-mb-8 flex flex-wrap items-center gap-3">
           <Dropdown
             value={active.key}
             onChange={(key) => router.replace(`${basePath}?type=${key}`, { scroll: false })}
@@ -135,13 +140,42 @@ function ScriptFeed({
             }))}
             icon="ph-squares-four"
           />
+          {/* Sub-feeds, when the feed has them: one pill per category plus
+              "All". Counts are live, so an empty category says so. */}
+          {active.categories.length > 0 && (
+            <div className="flex gap-1 rounded-full bg-bone-100 p-1">
+              {[{ key: "", label: "All", count: active.count }, ...active.categories].map((c) => {
+                const selected = (category ?? "") === c.key;
+                return (
+                  <button
+                    key={c.key}
+                    type="button"
+                    onClick={() =>
+                      router.replace(
+                        c.key
+                          ? `${basePath}?type=${active.key}&category=${c.key}`
+                          : `${basePath}?type=${active.key}`,
+                        { scroll: false }
+                      )
+                    }
+                    className={`cursor-pointer rounded-full px-4 py-1.5 text-[13px] font-medium leading-4 ${
+                      selected ? "bg-ink text-white" : "text-slate-500 hover:text-ink"
+                    }`}
+                  >
+                    {c.label}
+                    <span className={`ml-1.5 ${selected ? "text-white/60" : "text-slate-400"}`}>{c.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {data && items.length === 0 && active && (
         <EmptyState
           icon="ph-newspaper"
-          title={`No ${active.label.toLowerCase()} ${noun} yet`}
+          title={`No ${(active.categories.find((c) => c.key === category)?.label ?? active.label).toLowerCase()} ${noun} yet`}
           body={`${noun[0].toUpperCase()}${noun.slice(1)} arrive on their own as the Stalvian engine publishes them — nothing to pull, this feed fills itself in.`}
         />
       )}

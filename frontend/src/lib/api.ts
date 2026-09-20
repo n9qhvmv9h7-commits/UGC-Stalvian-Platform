@@ -126,9 +126,32 @@ export interface StoryPayload {
   /** X threads (tweet accounts): the post as tweets, in order. A story with
       tweets has no scenes — it is posted, not shot. */
   tweets?: Tweet[];
-  /** Which tweets this creator has attached a picture to (1-based orders).
-      The bytes are fetched per tweet, only for the one on screen. */
-  image_tweets?: number[];
+  /** One entry per tweet: which card the panel draws under it. */
+  media?: TweetMedia[];
+  /** Breaking-news subtab (macro | stock | fda | gov) or "trending". */
+  category?: string | null;
+  category_label?: string | null;
+  /** The stocks the thread is about (macro: three; single-company: one). */
+  stocks?: ThreadStock[];
+  /** The smart money already in these names (macro tweet 3). */
+  buyers?: ThreadBuyer[];
+  featured_buyer?: FeaturedBuyer | null;
+  /** The company price chart, when the panel has one for this post. */
+  chart?: ThreadChart | null;
+  /** The last month of the same series (Album Trades movers, tweet 1). */
+  chart_month?: ThreadChart | null;
+  /** Hedge Fund Alerts. */
+  filer_name?: string;
+  holdings?: ThreadHolding[];
+  top_buys?: RankedRow[];
+  top_sells?: RankedRow[];
+  /** Insider Picks: the insider's return since the buy. */
+  insider_return_pct?: number | null;
+  /** Top Movers: the article's domain for the card footer. */
+  source_label?: string | null;
+  /** Pictures this creator has attached, by tweet and slot. The bytes are
+      fetched per tweet, only for the one on screen. */
+  images?: { order: number; slot: number }[];
   published_at?: string | null;
   created_at?: string | null;
 }
@@ -136,6 +159,82 @@ export interface StoryPayload {
 export interface Tweet {
   text: string;
   order: number;
+}
+
+export type TweetMediaKind =
+  | "image"
+  | "dual_image"
+  | "logos"
+  | "faces"
+  | "chart"
+  | "chart_entry"
+  | "chart_month"
+  | "chart_wide"
+  | "holdings"
+  | "list_buys"
+  | "list_sells"
+  | "square_chart"
+  | "square_plain"
+  | "none";
+
+export interface TweetMedia {
+  kind: TweetMediaKind;
+  /** Upload prompt on the picture (or the picture half of a split card). */
+  hint?: string;
+}
+
+export interface ThreadStock {
+  ticker: string;
+  company_name: string;
+  short_name: string;
+  description: string;
+  logo_url: string | null;
+}
+
+export interface ThreadBuyer {
+  name: string;
+  ticker: string;
+  return_pct: number | null;
+  detail: string;
+  photo_url: string | null;
+}
+
+export interface FeaturedBuyer {
+  name: string;
+  kind: "politician" | "investor";
+  return_pct: number | null;
+  entry_date: string | null;
+  amount: string | null;
+  photo_url: string | null;
+}
+
+export interface ThreadChart {
+  ticker: string;
+  price: number;
+  start_price: number;
+  change_abs: number;
+  change_pct: number;
+  range_label: string;
+  from_date: string | null;
+  to_date: string | null;
+  points: number[];
+  /** Epoch ms per point, when the panel had them (month ticks on the square card). */
+  times?: number[] | null;
+  /** Index into `points` where the featured buyer bought, if known. */
+  entry_index: number | null;
+}
+
+export interface ThreadHolding {
+  issuer: string;
+  class_type: string;
+  value: number;
+  shares: number | null;
+}
+
+export interface RankedRow {
+  ticker: string;
+  amount: string;
+  icon_url: string | null;
 }
 
 export interface AlbumStats {
@@ -505,6 +604,12 @@ export interface FeedPage {
 
 /** One Daily Scripts feed. The server owns the list (GET /api/feed/types), so
     a new feed reaches the app without a frontend release. */
+export interface FeedCategory {
+  key: string;
+  label: string;
+  count: number;
+}
+
 export interface FeedType {
   key: string;
   label: string;
@@ -512,6 +617,9 @@ export interface FeedType {
   count: number;
   /** Stories stored since this creator last opened the feed. */
   unread: number;
+  /** Sub-feeds to filter on (the panel's Breaking News subtabs). Empty when
+      the feed has none. */
+  categories: FeedCategory[];
 }
 
 export const fetchFeedTypes = () =>
@@ -520,8 +628,10 @@ export const fetchFeedTypes = () =>
 export const markFeedSeen = (key: string) =>
   api.post(`/api/feed/${key}/seen`).then((r) => r.data);
 
-export const fetchFeed = (key: string, page = 1) =>
-  api.get(`/api/feed/${key}`, { params: { page } }).then((r) => asList<StoryPayload>(r.data));
+export const fetchFeed = (key: string, page = 1, category?: string | null) =>
+  api
+    .get(`/api/feed/${key}`, { params: category ? { page, category } : { page } })
+    .then((r) => asList<StoryPayload>(r.data));
 
 // ---------- Thread images ----------
 // The panel never sends its own imagery, so the picture on a tweet is the
@@ -530,27 +640,31 @@ export const fetchFeed = (key: string, page = 1) =>
 
 export interface TweetImage {
   tweet_order: number;
+  /** Which picture on the tweet: 0 is the tweet's own; composite cards use
+      one slot per logo or face. */
+  slot: number;
   size: number;
   data_url: string;
 }
 
-export const fetchTweetImage = (storyId: number, order: number) =>
+export const fetchTweetImages = (storyId: number, order: number) =>
   api
-    .get<TweetImage>(`/api/threads/${storyId}/tweets/${order}/image`)
-    .then((r) => r.data);
+    .get<{ tweet_order: number; images: TweetImage[] }>(`/api/threads/${storyId}/tweets/${order}/image`)
+    .then((r) => r.data.images);
 
-export const uploadTweetImage = (storyId: number, order: number, file: File) => {
-  const body = new FormData();
-  body.append("file", file);
+export const uploadTweetImage = (storyId: number, order: number, file: File, slot = 0) => {
+  const form = new FormData();
+  form.append("file", file);
   return api
-    .put<TweetImage>(`/api/threads/${storyId}/tweets/${order}/image`, body, {
+    .put<TweetImage>(`/api/threads/${storyId}/tweets/${order}/image`, form, {
+      params: { slot },
       timeout: 60_000,
     })
     .then((r) => r.data);
 };
 
-export const deleteTweetImage = (storyId: number, order: number) =>
-  api.delete(`/api/threads/${storyId}/tweets/${order}/image`).then((r) => r.data);
+export const deleteTweetImage = (storyId: number, order: number, slot = 0) =>
+  api.delete(`/api/threads/${storyId}/tweets/${order}/image`, { params: { slot } }).then((r) => r.data);
 
 // ---------- Connected social accounts ----------
 

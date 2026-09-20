@@ -85,6 +85,10 @@ class Story(Base):
     # active | retracted — the panel can retract an approved script (webhook
     # event / reconcile); retracted stories stay stored but are never served.
     status: Mapped[str] = mapped_column(String(16), default="active", index=True)
+    # X threads only: the breaking-news subtab the post came from (macro |
+    # stock | fda | gov) or "trending". A column, not a payload key, so the
+    # feed can filter on it.
+    category: Mapped[str | None] = mapped_column(String(16), nullable=True, index=True)
     payload: Mapped[dict] = mapped_column(JSON)  # title/hook/scenes/hashtags/cta/virality/sources…
     # The exact panel API response this story came from, untrimmed — we always
     # keep a local copy of everything served to creators.
@@ -108,7 +112,9 @@ class ThreadImage(Base):
 
     __tablename__ = "thread_images"
     __table_args__ = (
-        UniqueConstraint("creator_id", "story_id", "tweet_order", name="uq_thread_image"),
+        UniqueConstraint(
+            "creator_id", "story_id", "tweet_order", "slot", name="uq_thread_image_slot"
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -116,6 +122,10 @@ class ThreadImage(Base):
     story_id: Mapped[int] = mapped_column(ForeignKey("stories.id"), index=True)
     # 1-based position in the thread, matching payload["tweets"][n]["order"].
     tweet_order: Mapped[int] = mapped_column(Integer)
+    # Which picture on that tweet. A plain tweet has one (slot 0); the panel's
+    # composite cards have several — a logo per company, a face per buyer —
+    # and each is its own upload.
+    slot: Mapped[int] = mapped_column(Integer, default=0)
     content_type: Mapped[str] = mapped_column(String(64))
     data: Mapped[bytes] = mapped_column(LargeBinary)
     size: Mapped[int] = mapped_column(Integer)

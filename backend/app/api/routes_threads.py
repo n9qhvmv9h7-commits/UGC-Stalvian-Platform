@@ -13,7 +13,7 @@ web for anyone who guessed the id.
 """
 import base64
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,9 +30,36 @@ MAX_IMAGE_BYTES = 4 * 1024 * 1024
 # What X itself displays. Anything else would preview here and fail there.
 ALLOWED_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
 
+# Pictures per tweet. Slot 0 is the tweet's own picture; the panel's
+# composite cards use more — one logo per company (up to 3), one face per
+# smart-money buyer (up to 5).
+MAX_SLOT = 7
+
 
 def _data_url(image: ThreadImage) -> str:
     return f"data:{image.content_type};base64,{base64.b64encode(image.data).decode()}"
+
+
+def _view(image: ThreadImage) -> dict:
+    return {
+        "tweet_order": image.tweet_order,
+        "slot": image.slot,
+        "size": image.size,
+        "data_url": _data_url(image),
+    }
+
+
+async def _find(db: AsyncSession, creator: Creator, story_id: int, order: int, slot: int) -> ThreadImage | None:
+    return (
+        await db.execute(
+            select(ThreadImage).where(
+                ThreadImage.creator_id == creator.id,
+                ThreadImage.story_id == story_id,
+                ThreadImage.tweet_order == order,
+                ThreadImage.slot == slot,
+            )
+        )
+    ).scalar_one_or_none()
 
 
 async def _thread_tweet(
@@ -62,10 +89,11 @@ async def upload_tweet_image(
     story_id: int,
     order: int,
     file: UploadFile = File(...),
+    slot: int = Query(default=0, ge=0, le=MAX_SLOT),
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
-    """Attach (or replace) the picture on one tweet."""
+    """Attach (or replace) a picture on one tweet."""
     await _thread_tweet(db, creator, story_id, order)
     content_type = (file.content_type or "").split(";")[0].strip().lower()
     if content_type not in ALLOWED_TYPES:
@@ -83,18 +111,10 @@ async def upload_tweet_image(
     if not data:
         raise HTTPException(status_code=400, detail="That file is empty")
 
-    existing = (
-        await db.execute(
-            select(ThreadImage).where(
-                ThreadImage.creator_id == creator.id,
-                ThreadImage.story_id == story_id,
-                ThreadImage.tweet_order == order,
-            )
-        )
-    ).scalar_one_or_none()
+    existing = await _find(db, creator, story_id, order, slot)
     if existing is None:
         existing = ThreadImage(
-            creator_id=creator.id, story_id=story_id, tweet_order=order,
+            creator_id=creator.id, story_id=story_id, tweet_order=order, slot=slot,
             content_type=content_type, data=data, size=len(data),
         )
         db.add(existing)
@@ -104,48 +124,45 @@ async def upload_tweet_image(
         existing.size = len(data)
     await db.commit()
     await db.refresh(existing)
-    return {"tweet_order": order, "size": existing.size, "data_url": _data_url(existing)}
+    return _view(existing)
 
 
 @router.get("/{story_id}/tweets/{order}/image")
-async def get_tweet_image(
+async def get_tweet_images(
     story_id: int,
     order: int,
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
-    """The picture on one tweet. Fetched only for the tweet on screen, so a
-    feed of threads never drags every image down with it."""
-    image = (
-        await db.execute(
-            select(ThreadImage).where(
-                ThreadImage.creator_id == creator.id,
-                ThreadImage.story_id == story_id,
-                ThreadImage.tweet_order == order,
+    """Every picture on one tweet, by slot. Fetched only for the tweet on
+    screen, so a feed of threads never drags every image down with it."""
+    rows = (
+        (
+            await db.execute(
+                select(ThreadImage)
+                .where(
+                    ThreadImage.creator_id == creator.id,
+                    ThreadImage.story_id == story_id,
+                    ThreadImage.tweet_order == order,
+                )
+                .order_by(ThreadImage.slot)
             )
         )
-    ).scalar_one_or_none()
-    if image is None:
-        raise HTTPException(status_code=404, detail="No image on this tweet")
-    return {"tweet_order": order, "size": image.size, "data_url": _data_url(image)}
+        .scalars()
+        .all()
+    )
+    return {"tweet_order": order, "images": [_view(i) for i in rows]}
 
 
 @router.delete("/{story_id}/tweets/{order}/image")
 async def delete_tweet_image(
     story_id: int,
     order: int,
+    slot: int = Query(default=0, ge=0, le=MAX_SLOT),
     creator: Creator = Depends(get_current_approved_creator),
     db: AsyncSession = Depends(get_db),
 ):
-    image = (
-        await db.execute(
-            select(ThreadImage).where(
-                ThreadImage.creator_id == creator.id,
-                ThreadImage.story_id == story_id,
-                ThreadImage.tweet_order == order,
-            )
-        )
-    ).scalar_one_or_none()
+    image = await _find(db, creator, story_id, order, slot)
     if image is None:
         raise HTTPException(status_code=404, detail="No image on this tweet")
     await db.delete(image)

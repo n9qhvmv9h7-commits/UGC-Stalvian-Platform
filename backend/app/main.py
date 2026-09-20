@@ -47,6 +47,7 @@ def _migrate(conn):
         "stories": {
             "raw": "ALTER TABLE stories ADD COLUMN raw JSON",
             "status": "ALTER TABLE stories ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'active'",
+            "category": "ALTER TABLE stories ADD COLUMN category VARCHAR(16)",
         },
     }
     for table, columns_ddl in ddl.items():
@@ -56,6 +57,10 @@ def _migrate(conn):
         for name, stmt in columns_ddl.items():
             if name not in columns:
                 conn.execute(text(stmt))
+    if "thread_images" in tables:
+        _migrate_thread_image_slots(conn, inspector)
+    if "stories" in tables:
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_stories_category ON stories (category)"))
     # ALTER TABLE ADD COLUMN cannot carry UNIQUE portably, and create_all skips
     # indexes on tables that already exist — so the uniqueness guarantee
     # behind referral codes is created here, idempotently.
@@ -66,6 +71,52 @@ def _migrate(conn):
                 "ON creators (referral_code)"
             )
         )
+
+
+def _migrate_thread_image_slots(conn, inspector) -> None:
+    """thread_images gained a `slot` column, and the unique key grew to
+    include it: the panel's composite cards hold several pictures per tweet
+    (a logo per company, a face per buyer), each its own upload.
+
+    Postgres can swap the constraint in place. SQLite cannot drop a table
+    constraint, so there (local dev only) the table is rebuilt.
+    """
+    columns = {c["name"] for c in inspector.get_columns("thread_images")}
+    if "slot" in columns:
+        return
+    if conn.dialect.name == "sqlite":
+        conn.execute(text("ALTER TABLE thread_images RENAME TO thread_images_old"))
+        conn.execute(
+            text(
+                "CREATE TABLE thread_images ("
+                " id INTEGER NOT NULL PRIMARY KEY,"
+                " creator_id INTEGER NOT NULL REFERENCES creators(id),"
+                " story_id INTEGER NOT NULL REFERENCES stories(id),"
+                " tweet_order INTEGER NOT NULL,"
+                " slot INTEGER NOT NULL DEFAULT 0,"
+                " content_type VARCHAR(64) NOT NULL,"
+                " data BLOB NOT NULL,"
+                " size INTEGER NOT NULL,"
+                " created_at DATETIME,"
+                " CONSTRAINT uq_thread_image_slot UNIQUE (creator_id, story_id, tweet_order, slot))"
+            )
+        )
+        old = {c["name"] for c in inspector.get_columns("thread_images_old")}
+        copied = [c for c in ("id", "creator_id", "story_id", "tweet_order", "content_type", "data", "size", "created_at") if c in old]
+        cols = ", ".join(copied)
+        conn.execute(text(f"INSERT INTO thread_images ({cols}) SELECT {cols} FROM thread_images_old"))
+        conn.execute(text("DROP TABLE thread_images_old"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_thread_images_creator_id ON thread_images (creator_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_thread_images_story_id ON thread_images (story_id)"))
+        return
+    conn.execute(text("ALTER TABLE thread_images ADD COLUMN slot INTEGER NOT NULL DEFAULT 0"))
+    conn.execute(text("ALTER TABLE thread_images DROP CONSTRAINT IF EXISTS uq_thread_image"))
+    conn.execute(
+        text(
+            "ALTER TABLE thread_images ADD CONSTRAINT uq_thread_image_slot "
+            "UNIQUE (creator_id, story_id, tweet_order, slot)"
+        )
+    )
 
 
 async def _bootstrap_admin() -> None:

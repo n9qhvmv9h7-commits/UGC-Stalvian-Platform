@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.models import PanelCache, Story
+from app.services.threads import category_of, thread_payload
 from app.services.panel_client import PanelError, panel
 from app.services.translator import translate_payload
 
@@ -131,6 +132,11 @@ _FEED_KINDS = {
     # the two surfaces can never be confused in a query.
     "tweets_breaking": "x_breaking",
     "tweets_trending": "x_trending",
+    "tweets_album_trades": "x_album_trades",
+    "tweets_big_buy": "x_big_buy",
+    "tweets_hedge_fund": "x_hedge_fund",
+    "tweets_insider_picks": "x_insider_picks",
+    "tweets_stock_news": "x_stock_news",
 }
 
 
@@ -145,7 +151,7 @@ def _payload_fn(kind: str):
     if kind == "mover":
         return _mover_script_payload
     if is_thread_kind(kind):
-        return _thread_payload
+        return thread_payload
     return _breaking_payload
 
 
@@ -245,6 +251,9 @@ async def _upsert_story(
             kind=kind,
             panel_ref=ref,
             language="en",
+            # Threads carry their breaking-news category as a column so a
+            # feed can be filtered on it without opening every payload.
+            category=category_of(item) if is_thread_kind(kind) else None,
             payload=to_payload(item),
             raw=item,  # keep the exact panel response locally
             published_at=_parse_dt(item.get("generated_at")),
@@ -263,9 +272,15 @@ async def _upsert_story(
     if not trust_payload and new_stamp and old_stamp and new_stamp <= old_stamp:
         return 0, 0
     new_payload = to_payload(item)
-    if existing.payload == new_payload and existing.status == "active":
+    new_category = category_of(item) if is_thread_kind(kind) else None
+    if (
+        existing.payload == new_payload
+        and existing.status == "active"
+        and existing.category == new_category
+    ):
         return 0, 0
     existing.payload = new_payload
+    existing.category = new_category
     existing.raw = item
     existing.translations = {}  # content changed — cached translations are stale
     existing.status = "active"  # an edited re-approval reactivates it
@@ -412,29 +427,6 @@ def _breaking_payload(item: dict) -> dict:
         "scenes": normalize_scenes(item.get("scenes")),
         "alternative_hooks": item.get("alternative_hooks") or [],
         "call_to_action": item.get("call_to_action"),
-        "hashtags": item.get("hashtags") or [],
-        "virality_score": item.get("virality_score"),
-        "sources": item.get("sources") or [],
-    }
-
-
-def _thread_payload(item: dict) -> dict:
-    """An X thread from the panel: `tweets` is the whole point, and the rest
-    is what a creator needs to judge and cite it. Panel imagery is never
-    carried — creators supply their own visuals."""
-    tweets = [
-        {"text": str(t.get("text")).strip(), "order": t.get("order") or i + 1}
-        for i, t in enumerate(item.get("tweets") or [])
-        if isinstance(t, dict) and str(t.get("text") or "").strip()
-    ]
-    chart = item.get("chart_data") or {}
-    # Trending headlines are line-broken for the Instagram carousel; a title
-    # on a card is one line.
-    title = " ".join(str(item.get("title") or chart.get("slide1_headline") or "").split())
-    return {
-        "title": title,
-        "tweets": tweets,
-        "ticker": item.get("ticker") or chart.get("ticker") or "",
         "hashtags": item.get("hashtags") or [],
         "virality_score": item.get("virality_score"),
         "sources": item.get("sources") or [],
