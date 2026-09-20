@@ -277,6 +277,8 @@ export interface Video {
 
 export interface PayoutFormula {
   currency: string;
+  /** Which curve this is: video views or X impressions. */
+  kind: "video" | "x";
   window_days: number;
   /** A link must arrive within this many days of posting. */
   submit_within_days: number;
@@ -286,6 +288,13 @@ export interface PayoutFormula {
   tier1_up_to_views: number;
   tier2_cents_per_1k: number;
   cap_cents: number;
+  /** X only: a creator's first N verified posts earn this flat bonus. 0 otherwise. */
+  first_posts: number;
+  first_post_bonus_cents: number;
+  /** X only: views pay is multiplied for posts submitted up to launch_until. */
+  launch_multiplier: number;
+  launch_until: string | null;
+  launch_active: boolean;
   /** Share of every fee paid by referred clients, in basis points (2500 = 25%). */
   commission_bps: number;
   commission_pct: number;

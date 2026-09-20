@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_admin, hash_password
 from app.database import get_db
 from app.models import Creator, Payout, VideoSubmission, ViewSnapshot
-from app.payout import video_payout_cents
+from app.payout import post_payout_cents
+from app.services.metrics import first_post_bonus_map_db
 from app.services.audit import audit
 from app.services.earning_window import eligible_views_map, window_cutoff
 from app.services.referrals import assign_referral_code
@@ -211,6 +212,7 @@ async def all_videos(
     rows = (await db.execute(query.order_by(VideoSubmission.created_at.desc()).limit(500))).all()
     # Payout shown to admins must match what the creator sees: window-limited.
     eligible = await eligible_views_map(db, [v for v, _ in rows])
+    bonus = await first_post_bonus_map_db(db, [v for v, _ in rows])
     return {
         "items": [
             {
@@ -229,7 +231,7 @@ async def all_videos(
                 "eligible_views": eligible.get(v.id, v.views),
                 "earning_until": window_cutoff(v).date().isoformat(),
                 "payout_cents": (
-                    video_payout_cents(eligible.get(v.id, v.views))
+                    post_payout_cents(v, eligible.get(v.id, v.views)) + bonus.get(v.id, 0)
                     if v.status == "verified"
                     else 0
                 ),

@@ -23,9 +23,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_admin
 from app.database import get_db
 from app.models import AuditLog, Creator, Payout, Story, VideoSubmission
-from app.payout import video_payout_cents
+from app.payout import post_payout_cents
 from app.services.earning_window import eligible_views_map
-from app.services.metrics import daily_metrics, fetch_snapshots
+from app.services.metrics import daily_metrics, fetch_snapshots, first_post_bonus_map_db
 from app.services.referrals import commission_totals, daily_commission
 
 router = APIRouter(prefix="/api/admin", tags=["admin-metrics"])
@@ -48,10 +48,11 @@ async def _earned_by_creator(
 ) -> tuple[dict[int, int], dict[int, int]]:
     """(earned_cents, eligible_views) summed per creator_id — one batch."""
     eligible = await eligible_views_map(db, verified)
+    bonus = await first_post_bonus_map_db(db, verified)
     earned: dict[int, int] = defaultdict(int)
     views: dict[int, int] = defaultdict(int)
     for v in verified:
-        earned[v.creator_id] += video_payout_cents(eligible.get(v.id, 0))
+        earned[v.creator_id] += post_payout_cents(v, eligible.get(v.id, 0)) + bonus.get(v.id, 0)
         views[v.creator_id] += eligible.get(v.id, 0)
     return earned, views
 
@@ -68,12 +69,13 @@ async def overview(
     payouts = (await db.execute(select(Payout))).scalars().all()
     snaps = await fetch_snapshots(db, [v.id for v in verified])
 
-    period = daily_metrics(verified, snaps, days)
+    bonus = await first_post_bonus_map_db(db, verified)
+    period = daily_metrics(verified, snaps, days, bonus=bonus)
     eligible = await eligible_views_map(db, verified)  # once, for everything below
     earned_by_creator: dict[int, int] = defaultdict(int)
     eligible_views_by_creator: dict[int, int] = defaultdict(int)
     for v in verified:
-        earned_by_creator[v.creator_id] += video_payout_cents(eligible.get(v.id, 0))
+        earned_by_creator[v.creator_id] += post_payout_cents(v, eligible.get(v.id, 0)) + bonus.get(v.id, 0)
         eligible_views_by_creator[v.creator_id] += eligible.get(v.id, 0)
     # Referral commission is the second stream in every € figure below —
     # balances must match what creators see, and they see one balance.
@@ -113,7 +115,7 @@ async def overview(
     creator_names = {c.id: c for c in creators}
     ranked = []
     for cid, vids in by_creator_videos.items():
-        gained = sum(m.views_gained for m in daily_metrics(vids, snaps, days).values())
+        gained = sum(m.views_gained for m in daily_metrics(vids, snaps, days, bonus=bonus).values())
         spark = [
             m.views_gained
             for _, m in sorted(daily_metrics(vids, snaps, 14).items())
@@ -147,7 +149,7 @@ async def overview(
                 "views_gained": gained,
                 "total_views": v.views,
                 "eligible_views": eligible.get(v.id, 0),
-                "payout_cents": video_payout_cents(eligible.get(v.id, 0)),
+                "payout_cents": post_payout_cents(v, eligible.get(v.id, 0)) + bonus.get(v.id, 0),
             }
         )
     top_videos.sort(key=lambda r: (r["views_gained"], r["total_views"]), reverse=True)
@@ -303,7 +305,7 @@ async def content_performance(
             key = (story.album_name, story.album_kind or "")
             albums[key]["videos"] += 1
             albums[key]["eligible_views"] += ev
-            albums[key]["earned_cents"] += video_payout_cents(ev)
+            albums[key]["earned_cents"] += post_payout_cents(v, ev)
 
     def story_title(s: Story) -> str:
         payload = s.payload or {}

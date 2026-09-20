@@ -8,18 +8,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_approved_creator
 from app.database import get_db
 from app.models import Creator, Payout, VideoSubmission
-from app.payout import formula_description, video_payout_cents
+from app.auth import get_current_creator
+from app.payout import formula_description, post_payout_cents
 from app.services.earning_window import eligible_views_map, naive
-from app.services.metrics import daily_metrics_db
+from app.services.metrics import daily_metrics_db, first_post_bonus_map_db
 from app.services.referrals import commission_totals, daily_commission
 
 router = APIRouter(prefix="/api/earnings", tags=["earnings"])
 
 
 @router.get("/formula")
-async def get_formula():
-    """Public — shown on the landing page too."""
-    return formula_description()
+async def get_formula(creator: Creator = Depends(get_current_creator)):
+    """The formula for this creator's surface: video and X pay differently."""
+    return formula_description(creator.account_type)
 
 
 # A chart is drawn one bar per day, so an unbounded range is just a way to ask
@@ -114,7 +115,8 @@ async def my_earnings(
 
     verified = [v for v in videos if v.status == "verified"]
     eligible = await eligible_views_map(db, verified)
-    views_earned = sum(video_payout_cents(eligible[v.id]) for v in verified)
+    bonus = await first_post_bonus_map_db(db, verified)
+    views_earned = sum(post_payout_cents(v, eligible[v.id]) + bonus.get(v.id, 0) for v in verified)
     referral = (await commission_totals(db, [creator.id])).get(creator.id) or {
         "fees_cents": 0, "commission_cents": 0, "clients": 0, "active_clients": 0,
     }
@@ -170,5 +172,5 @@ async def my_earnings(
             }
             for p in payouts
         ],
-        "formula": formula_description(),
+        "formula": formula_description(creator.account_type),
     }

@@ -38,6 +38,23 @@ class Settings(BaseSettings):
     PAYOUT_TIER2_CENTS_PER_K: int = 50
     PAYOUT_CAP_CENTS: int = 25000
 
+    # X posts pay on their own, front-loaded curve (impressions are cheaper
+    # than video views, and a growing account lands in the hundreds). See
+    # app/payout.py. The bounty and the launch multiplier are the "be
+    # aggressive at the start" levers: the bounty is per creator, once; the
+    # multiplier applies to posts submitted on or before the date and is
+    # switched off by moving the date, not by a deploy.
+    PAYOUT_X_MIN_VIEWS: int = 500
+    PAYOUT_X_BASE_CENTS: int = 300
+    PAYOUT_X_TIER1_CENTS_PER_K: int = 200
+    PAYOUT_X_TIER1_MAX_K: int = 10
+    PAYOUT_X_TIER2_CENTS_PER_K: int = 50
+    PAYOUT_X_CAP_CENTS: int = 15000
+    PAYOUT_X_FIRST_POSTS: int = 10
+    PAYOUT_X_FIRST_POST_BONUS_CENTS: int = 200
+    PAYOUT_X_LAUNCH_MULTIPLIER: float = 1.5
+    PAYOUT_X_LAUNCH_UNTIL: str = "2026-11-19"  # ISO date, empty = no launch period
+
     # Client referrals. Every creator has a referral code that new Stalvian
     # clients enter during onboarding; the creator then earns a share of the
     # fees that client pays for one year from their FIRST trade. The share is

@@ -22,13 +22,20 @@ import { Badge, Eyebrow, StatCard } from "@/components/ui";
 import { EarningsChartCard } from "@/components/earnings-chart";
 import { Modal } from "@/components/modal";
 
+/* Mirror of payout._curve + the launch multiplier, so the simulator says
+   what the backend will pay today. */
 function payoutFor(views: number, f: PayoutFormula): number {
   if (views < f.min_views) return 0;
   const thousands = Math.floor(views / 1000);
   const tier1Max = f.tier1_up_to_views / 1000;
-  const tier1 = Math.min(thousands - 1, tier1Max - 1) * f.tier1_cents_per_1k;
+  const tier1 = Math.max(Math.min(thousands - 1, tier1Max - 1), 0) * f.tier1_cents_per_1k;
   const tier2 = Math.max(thousands - tier1Max, 0) * f.tier2_cents_per_1k;
-  return Math.min(f.base_cents + tier1 + tier2, f.cap_cents);
+  const base = Math.min(f.base_cents + tier1 + tier2, f.cap_cents);
+  return f.launch_active ? Math.min(Math.round(base * f.launch_multiplier), f.cap_cents) : base;
+}
+
+function formatLongDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "long" });
 }
 
 /* One row: the section's name on the left and its total on the right. The big
@@ -108,7 +115,7 @@ export default function EarningsPage() {
   const { data } = useQuery({ queryKey: ["earnings"], queryFn: fetchEarnings });
   const { data: referrals } = useQuery({ queryKey: ["my-referrals"], queryFn: fetchMyReferrals });
   const { data: videos } = useQuery({ queryKey: ["videos"], queryFn: fetchMyVideos });
-  const [simViews, setSimViews] = useState(25000);
+  const [simViews, setSimViews] = useState(tweets ? 5000 : 25000);
   /* Which stream's rules are open. Each section explains only itself — a
      creator asking "why did this video pay that?" should not have to read
      the referral rules to find out. */
@@ -386,6 +393,24 @@ export default function EarningsPage() {
                         term: `Cap: ${formatEuros(data.formula.cap_cents)} per ${noun}`,
                         body: `One ${noun} cannot earn more than this, no matter how far it travels. The cap is per ${noun}, not per month — ten capped ${nounPlural} pay ten times the cap.`,
                       },
+                      ...(data.formula.first_posts > 0
+                        ? [
+                            {
+                              icon: "ph-gift",
+                              term: `Your first ${data.formula.first_posts} posts earn ${formatEuros(data.formula.first_post_bonus_cents)} extra`,
+                              body: `Each of your first ${data.formula.first_posts} verified posts adds ${formatEuros(data.formula.first_post_bonus_cents)} on top of its view pay, whatever its reach — even under ${formatViews(data.formula.min_views)} views. Once, per account.`,
+                            },
+                          ]
+                        : []),
+                      ...(data.formula.launch_active && data.formula.launch_until
+                        ? [
+                            {
+                              icon: "ph-rocket",
+                              term: `Launch bonus: ×${data.formula.launch_multiplier.toLocaleString("de-DE")} until ${formatLongDate(data.formula.launch_until)}`,
+                              body: `Every post submitted on or before ${formatLongDate(data.formula.launch_until)} has its view pay multiplied by ${data.formula.launch_multiplier.toLocaleString("de-DE")}, for the life of that post. The cap still applies.`,
+                            },
+                          ]
+                        : []),
                       {
                         icon: "ph-timer",
                         term: `Only the first ${data.formula.window_days} days count`,
@@ -424,15 +449,17 @@ export default function EarningsPage() {
               <input
                 type="range"
                 min={0}
-                max={500000}
-                step={1000}
+                max={data?.formula.kind === "x" ? 100000 : 500000}
+                step={data?.formula.kind === "x" ? 500 : 1000}
                 value={simViews}
                 onChange={(e) => setSimViews(Number(e.target.value))}
                 className="w-full accent-black"
               />
             </div>
             <div className="flex items-baseline justify-between border-t border-ink pt-5">
-              <span className="text-[15px] leading-6 text-slate-500">You earn</span>
+              <span className="text-[15px] leading-6 text-slate-500">
+                You earn{data?.formula.launch_active ? " (launch bonus in)" : ""}
+              </span>
               <span className="font-serif text-[40px] leading-[48px] text-green-600">
                 {data ? formatEuros(simPayout) : "—"}
               </span>
@@ -440,10 +467,12 @@ export default function EarningsPage() {
             {data && (
               <div className="flex flex-wrap gap-x-5 gap-y-1 text-[13px] leading-5 text-slate-500">
                 {data.formula.examples
-                  .filter((e) => [1000, 10000, 50000, 100000].includes(e.views))
+                  .filter((e) =>
+                    (data.formula.kind === "x" ? [500, 2000, 10000, 50000] : [1000, 10000, 50000, 100000]).includes(e.views)
+                  )
                   .map((e) => (
                     <span key={e.views}>
-                      {formatViews(e.views)} → {formatEuros(e.payout_cents)}
+                      {formatViews(e.views)} → {formatEuros(payoutFor(e.views, data.formula))}
                     </span>
                   ))}
               </div>

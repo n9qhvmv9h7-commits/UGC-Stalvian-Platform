@@ -74,6 +74,21 @@ rule that a translation is only cached if every tweet stays under 280 characters
 Examples: 1k → €5 · 10k → €14 · 50k → €54 · 100k → €79 · ~442k+ → €250 (cap).
 Formula lives in `backend/app/payout.py`; the frontend reads it from `GET /api/earnings/formula`.
 
+### X posts pay on their own curve
+
+X impressions are cheaper than video views and a growing account lands in the
+hundreds, so posts are paid front-loaded (`PAYOUT_X_*` in config):
+
+- **€3,00 at 500 impressions**, **+ €2,00 per 1.000** after the first 1.000 up to
+  10.000, **+ €0,50 per 1.000** beyond, **cap €150,00** per post.
+  Examples: 500 → €3 · 2k → €5 · 10k → €21 · 50k → €41.
+- **First-posts bounty:** a creator's first 10 verified posts earn **€2,00 extra**
+  each, whatever their reach (once, per account).
+- **Launch multiplier:** posts submitted on or before `PAYOUT_X_LAUNCH_UNTIL`
+  (default 2026-11-19) have their view pay **× 1,5**, for the life of the post,
+  still capped. End it by moving the date — no deploy needed.
+- Same 10-day window, submission deadline, strikes and balance as videos.
+
 ## Client referrals — the second income stream
 
 Every creator has a **referral code** (`POL-7K3M` style, generated on invite and

@@ -57,6 +57,10 @@ services:
         value: "2500" # creators' share of referred-client fees, in basis points (25%)
       - key: REFERRAL_SIGNUP_URL
         sync: false # optional: where clients sign up, linked next to the code
+      # X launch period: posts submitted on or before this date get their view
+      # pay multiplied (see app/payout.py). Move the date to extend or end it.
+      - key: PAYOUT_X_LAUNCH_UNTIL
+        value: "2026-11-19"
       # Both frontend origins — CORS rejects anything not listed here. These
       # stay blank until the first deploy assigns hostnames; Render does not
       # guarantee <service-name>.onrender.com, so they cannot be predicted.

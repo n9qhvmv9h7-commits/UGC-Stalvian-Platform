@@ -16,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models import VideoSubmission, ViewSnapshot
-from app.payout import EARNING_WINDOW_DAYS, video_payout_cents
+from app.payout import EARNING_WINDOW_DAYS, first_post_bonus_map, is_x, post_payout_cents
 from app.services.earning_window import naive
 
 
@@ -89,8 +89,13 @@ def daily_metrics(
     snaps_by_video: dict[int, list[tuple[date, int]]],
     days: int,
     today: date | None = None,
+    bonus: dict[int, int] | None = None,
 ) -> dict[date, DayMetrics]:
-    """Per-day views-gained + earned-cents over [today - days + 1, today]."""
+    """Per-day views-gained + earned-cents over [today - days + 1, today].
+
+    `bonus` is video_id -> first-posts bounty (see payout.first_post_bonus_map);
+    a bounty lands on the day the post was submitted, since it does not
+    depend on views at all."""
     if today is None:
         today = datetime.now(timezone.utc).date()
     start = today - timedelta(days=days - 1)
@@ -99,6 +104,10 @@ def daily_metrics(
     }
 
     for video in videos:
+        if bonus and bonus.get(video.id):
+            posted = _as_date(video.created_at)
+            if posted is not None and start <= posted <= today:
+                totals[posted].earned_cents += bonus[video.id]
         series, cutoff = _observations(video, snaps_by_video.get(video.id, []))
         if not series:
             continue
@@ -114,7 +123,7 @@ def daily_metrics(
                     views_before_eligible = max(views_before_eligible, views)
         carried_all = views_before_all
         carried_eligible = views_before_eligible
-        prev_payout = video_payout_cents(carried_eligible)
+        prev_payout = post_payout_cents(video, carried_eligible)
         idx = 0
         for i in range(days):
             day = start + timedelta(days=i)
@@ -125,7 +134,7 @@ def daily_metrics(
                 if obs_date <= cutoff:
                     carried_eligible = max(carried_eligible, views)
                 idx += 1
-            payout = video_payout_cents(carried_eligible)
+            payout = post_payout_cents(video, carried_eligible)
             totals[day].views_gained += carried_all - prev_all
             totals[day].earned_cents += max(payout - prev_payout, 0)
             prev_payout = payout
@@ -139,4 +148,28 @@ async def daily_metrics_db(
     """`today` anchors the last day of the window (default: actually today), so
     a caller can ask for an arbitrary [start, end] range as (span, end)."""
     snaps = await fetch_snapshots(db, [v.id for v in videos])
-    return daily_metrics(videos, snaps, days, today)
+    return daily_metrics(videos, snaps, days, today, bonus=await first_post_bonus_map_db(db, videos))
+
+
+async def first_post_bonus_map_db(
+    db: AsyncSession, videos: Sequence[VideoSubmission]
+) -> dict[int, int]:
+    """The first-posts bounty for the videos given, ranked over EVERY verified
+    X post of their creators — a page of recent rows cannot rank itself."""
+    creator_ids = {v.creator_id for v in videos if is_x(v.platform)}
+    if not creator_ids:
+        return {}
+    posts = (
+        (
+            await db.execute(
+                select(VideoSubmission).where(
+                    VideoSubmission.creator_id.in_(list(creator_ids)),
+                    VideoSubmission.status == "verified",
+                    VideoSubmission.platform.in_(("x",)),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return first_post_bonus_map(posts)

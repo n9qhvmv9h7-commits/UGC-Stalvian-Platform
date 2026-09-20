@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_approved_creator
 from app.database import get_db
 from app.models import Creator, SocialConnection, Story, VideoSubmission, ViewSnapshot
-from app.payout import video_payout_cents
+from app.payout import post_payout_cents
+from app.services.metrics import first_post_bonus_map_db
 from app.services.social import policy
 from app.services.earning_window import eligible_views_map, window_cutoff, window_open
 from app.services.view_tracker import (
@@ -39,10 +40,10 @@ class SubmitVideoRequest(BaseModel):
     title: str | None = Field(default=None, max_length=255)
 
 
-def _video_response(video: VideoSubmission, eligible: int | None = None) -> dict:
+def _video_response(video: VideoSubmission, eligible: int | None = None, bonus: int = 0) -> dict:
     if eligible is None:
         eligible = video.views
-    payout = video_payout_cents(eligible) if video.status == "verified" else 0
+    payout = post_payout_cents(video, eligible) + bonus if video.status == "verified" else 0
     return {
         "id": video.id,
         "url": video.url,
@@ -232,7 +233,8 @@ async def my_videos(
         .all()
     )
     eligible = await eligible_views_map(db, videos)
-    return {"items": [_video_response(v, eligible.get(v.id)) for v in videos]}
+    bonus = await first_post_bonus_map_db(db, videos)
+    return {"items": [_video_response(v, eligible.get(v.id), bonus.get(v.id, 0)) for v in videos]}
 
 
 @router.delete("/{video_id}")
@@ -253,7 +255,10 @@ async def delete_video(
     # Same eligibility basis as the payout the creator sees: a video that has
     # earned (window-limited) money must keep its record.
     eligible = await eligible_views_map(db, [video])
-    if video.status == "verified" and video_payout_cents(eligible.get(video.id, video.views)) > 0:
+    bonus = await first_post_bonus_map_db(db, [video])
+    if video.status == "verified" and (
+        post_payout_cents(video, eligible.get(video.id, video.views)) + bonus.get(video.id, 0) > 0
+    ):
         raise HTTPException(
             status_code=400,
             detail=f"Verified earning {_noun(creator)}s can't be deleted",
