@@ -13,7 +13,7 @@
    stored against that tweet for this creator, and the finished card exports
    as a PNG at the panel's design size so it can be posted as-is. */
 
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -28,9 +28,6 @@ import {
   type TweetImage,
   type TweetMedia,
 } from "@/lib/api";
-import { formatDate } from "@/lib/format";
-import { Badge, Button } from "@/components/ui";
-import { ViralityMeter } from "@/components/script-card";
 import { TweetPreview, compactAge } from "@/components/tweet-preview";
 import {
   CompanyChartCard,
@@ -65,6 +62,20 @@ function copy(text: string, what: string) {
    them back into replies. */
 export function fullThreadText(tweets: Tweet[]): string {
   return tweets.map((t) => t.text).join("\n\n---\n\n");
+}
+
+/** "17/09/2026, 07:11" — the panel's stamp under each tweet, to the minute. */
+function formatStamp(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /* Deep link that opens X's composer with this tweet filled in. The rest of a
@@ -130,15 +141,6 @@ function ActionsMenu({ children }: { children: (close: () => void) => React.Reac
   );
 }
 
-const CATEGORY_TONE: Record<string, "ink" | "positive" | "warn" | "neutral"> = {
-  macro: "ink",
-  stock: "positive",
-  fda: "warn",
-  gov: "neutral",
-  caught: "positive",
-  movers: "ink",
-};
-
 /* Every card is drawn at its native size and exported at it. */
 function nativeSize(kind: TweetMedia["kind"]): { w: number; h: number } {
   switch (kind) {
@@ -196,6 +198,7 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
   );
   const sources = [...new Set((story.sources ?? []).map((s) => s.trim()).filter(Boolean))];
 
+  const router = useRouter();
   const [index, setIndex] = useState(0);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -440,7 +443,7 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
   };
 
   return (
-    <div className="dashed-card flex flex-col gap-5 bg-white p-6 lg:p-8">
+    <div className="flex min-w-0 flex-col gap-3">
       <input
         ref={fileRef}
         type="file"
@@ -453,29 +456,6 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
         }}
       />
 
-      {/* Header — badges + timestamp left, virality meter right */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          {story.category && story.category !== "trending" && (
-            <Badge tone={CATEGORY_TONE[story.category] ?? "neutral"}>
-              {story.category_label ?? story.category}
-            </Badge>
-          )}
-          {story.ticker && <Badge tone="ink">${story.ticker}</Badge>}
-          <Badge>
-            {tweets.length} tweet{tweets.length === 1 ? "" : "s"}
-          </Badge>
-          {story.language && <Badge>{story.language.toUpperCase()}</Badge>}
-        </div>
-        {typeof story.virality_score === "number" && (
-          <ViralityMeter score={story.virality_score} />
-        )}
-      </div>
-
-      {story.title && (
-        <div className="text-[15px] font-medium leading-5 text-ink">{story.title}</div>
-      )}
-
       {tweets.length === 0 && (
         <p className="text-[15px] leading-5 text-slate-500">
           This thread has no text yet — check back shortly.
@@ -483,7 +463,7 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
       )}
 
       {active && (
-        <div className="flex w-full max-w-[598px] flex-col gap-3">
+        <div className="flex w-full max-w-[598px] flex-col gap-2">
           <div className="relative">
             <TweetPreview
               name={me?.name}
@@ -501,7 +481,7 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
                 type="button"
                 onClick={() => setIndex(index - 1)}
                 aria-label="Previous tweet"
-                className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
+                className="absolute left-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
               >
                 <i className="ph ph-caret-left text-[18px]" />
               </button>
@@ -511,7 +491,7 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
                 type="button"
                 onClick={() => setIndex(index + 1)}
                 aria-label="Next tweet"
-                className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink/70 text-white hover:bg-ink"
+                className="absolute right-2 top-1/2 z-10 flex h-8 w-8 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80"
               >
                 <i className="ph ph-caret-right text-[18px]" />
               </button>
@@ -528,18 +508,61 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
                   onClick={() => setIndex(i)}
                   aria-label={`Tweet ${i + 1}`}
                   className={`h-2 w-2 cursor-pointer rounded-full transition-all ${
-                    i === index ? "scale-125 bg-ink" : "bg-slate-200 hover:bg-slate-300"
+                    i === index ? "scale-125 bg-ink" : "bg-slate-300 hover:bg-slate-400"
                   }`}
                 />
               ))}
             </div>
           )}
 
-          {/* Controls — Actions, position, character count */}
+          {/* The panel's row: Actions, position in the thread, and when the
+              post was generated — nothing else. */}
           <div className="flex flex-wrap items-center gap-3">
             <ActionsMenu>
               {(close) => (
                 <>
+                  <MenuItem
+                    icon="ph-paper-plane-tilt"
+                    onClick={() => {
+                      close();
+                      router.push(`/my-posts?story=${story.id}`);
+                    }}
+                  >
+                    Submit your post
+                  </MenuItem>
+                  <div className="my-1 border-t border-bone-200" />
+                  <MenuItem
+                    icon="ph-copy"
+                    onClick={() => {
+                      close();
+                      copy(active.text, `Tweet ${order}`);
+                    }}
+                  >
+                    Copy this tweet
+                  </MenuItem>
+                  {tweets.length > 1 && (
+                    <MenuItem
+                      icon="ph-copy-simple"
+                      onClick={() => {
+                        close();
+                        copy(fullThreadText(tweets), "Thread");
+                      }}
+                    >
+                      Copy the whole thread
+                    </MenuItem>
+                  )}
+                  <MenuItem
+                    icon="ph-x-logo"
+                    onClick={() => {
+                      close();
+                      window.open(postIntentUrl(active.text), "_blank", "noopener,noreferrer");
+                    }}
+                  >
+                    Post this tweet on X
+                  </MenuItem>
+                  {(slots.length > 0 || media.kind !== "none") && (
+                    <div className="my-1 border-t border-bone-200" />
+                  )}
                   {slots.map(({ slot, label }) => (
                     <MenuItem
                       key={slot}
@@ -578,34 +601,6 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
                       {downloading ? "Rendering…" : "Download image"}
                     </MenuItem>
                   )}
-                  <div className="my-1 border-t border-bone-200" />
-                  <MenuItem
-                    icon="ph-copy"
-                    onClick={() => {
-                      close();
-                      copy(active.text, `Tweet ${order}`);
-                    }}
-                  >
-                    Copy this tweet
-                  </MenuItem>
-                  <MenuItem
-                    icon="ph-copy-simple"
-                    onClick={() => {
-                      close();
-                      copy(fullThreadText(tweets), "Thread");
-                    }}
-                  >
-                    Copy the whole thread
-                  </MenuItem>
-                  <MenuItem
-                    icon="ph-x-logo"
-                    onClick={() => {
-                      close();
-                      window.open(postIntentUrl(active.text), "_blank", "noopener,noreferrer");
-                    }}
-                  >
-                    Post this tweet on X
-                  </MenuItem>
                   {sources.length > 0 && (
                     <>
                       <div className="my-1 border-t border-bone-200" />
@@ -624,18 +619,28 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
               )}
             </ActionsMenu>
 
-            <span className="text-[13px] leading-5 text-slate-500">
-              Tweet {index + 1}/{tweets.length}
-            </span>
+            {tweets.length > 1 && (
+              <span className="text-[13px] leading-5 text-slate-500">
+                Tweet {index + 1}/{tweets.length}
+              </span>
+            )}
 
-            <span
-              className={`ml-auto text-[12px] leading-4 ${
-                over ? "font-medium text-red-600" : "text-slate-400"
-              }`}
-            >
-              {length}/{TWEET_MAX_CHARS}
-              {over && " · over the limit"}
-            </span>
+            {over && (
+              <span className="text-[12px] font-medium leading-4 text-red-600">
+                {length}/{TWEET_MAX_CHARS} · over the limit
+              </span>
+            )}
+
+            <div className="ml-auto flex items-center gap-2">
+              <span className="text-[12px] leading-4 text-slate-500">
+                {formatStamp(story.published_at || story.created_at)}
+              </span>
+              {story.category_label && (
+                <span className="rounded-[4px] bg-bone-100 px-2 py-0.5 text-[10px] font-medium uppercase leading-4 tracking-[0.04em] text-slate-500">
+                  {story.category_label}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -643,7 +648,7 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
       {/* Every claim traces back to a disclosure. A creator about to post it
           should be able to see the filing first. */}
       {sources.length > 0 && sourcesOpen && (
-        <ul className="flex flex-col gap-2 rounded-[8px] bg-bone-100 p-4">
+        <ul className="flex max-w-[598px] flex-col gap-2 rounded-[8px] bg-bone-100 p-4">
           {sources.map((src, i) => (
             <li key={`${src}-${i}`} className="text-[14px] leading-5">
               {/^https?:\/\//.test(src) ? (
@@ -663,19 +668,6 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
           ))}
         </ul>
       )}
-
-      <div className="flex flex-wrap items-center gap-3 border-t border-bone-200 pt-4">
-        <span className="text-[12px] leading-4 text-slate-400">
-          Generated {formatDate(story.created_at || story.published_at)}
-        </span>
-        {/* Posting is only half of it — the link has to come back here for the
-            views to be counted and paid. */}
-        <Link href={`/my-posts?story=${story.id}`} className="ml-auto">
-          <Button kind="secondary" size="s" icon="ph-paper-plane-tilt">
-            Submit Your Post
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }
