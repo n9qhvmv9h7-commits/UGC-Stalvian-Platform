@@ -46,7 +46,9 @@ import {
   SQ_W,
   SquareChartCard,
   ThreeLogoCard,
-  WIDE_W,
+  SPLIT_H,
+  TALL_H,
+  TALL_W,
 } from "@/components/tweet-media";
 
 /* X's limit. Counted in code points, which matches X for plain text; links
@@ -141,7 +143,12 @@ function ActionsMenu({ children }: { children: (close: () => void) => React.Reac
   );
 }
 
-/* Every card is drawn at its native size and exported at it. */
+/* Every card is drawn at its native size and exported at it.
+
+   The chart frames are the panel's current ones: a split with a chart in it
+   is 1600x1200 rather than 1600x900, because at 16:9 the plots read flat
+   inside X's frame, and a standalone chart card is 1080x1289 — the reference
+   card's proportion, still inside X's 4:5 limit. */
 function nativeSize(kind: TweetMedia["kind"]): { w: number; h: number } {
   switch (kind) {
     case "list_buys":
@@ -151,7 +158,11 @@ function nativeSize(kind: TweetMedia["kind"]): { w: number; h: number } {
     case "square_plain":
       return { w: SQ_W, h: SQ_H };
     case "chart_wide":
-      return { w: WIDE_W, h: DESIGN_H };
+      return { w: TALL_W, h: TALL_H };
+    case "chart":
+    case "chart_entry":
+    case "chart_month":
+      return { w: DESIGN_W, h: SPLIT_H };
     default:
       return { w: DESIGN_W, h: DESIGN_H };
   }
@@ -165,9 +176,16 @@ function slotsFor(media: TweetMedia | undefined, story: StoryPayload): { slot: n
     case "faces":
       return (story.buyers ?? []).slice(0, 5).map((b, i) => ({ slot: i, label: `${b.name} photo` }));
     case "chart":
-      return [{ slot: 0, label: "company picture" }, { slot: 1, label: "company icon" }];
+      return [{ slot: 0, label: "cover image" }, { slot: 1, label: "company icon" }];
     case "chart_entry":
-      return [{ slot: 0, label: "investor picture" }, { slot: 1, label: "company icon" }];
+      // Three uploads, not two: the panel split the cover image from the
+      // portrait that sits in the marker, so one picture no longer has to do
+      // both jobs at two very different crops.
+      return [
+        { slot: 0, label: "cover image" },
+        { slot: 1, label: "company icon" },
+        { slot: 2, label: "portrait on the chart" },
+      ];
     case "chart_month":
       return [{ slot: 0, label: "company logo" }];
     case "chart_wide":
@@ -331,21 +349,29 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
         // Slot 1 is the company icon on the card; a movers month card uses
         // the logo upload for both the photo half and the icon, as the panel does.
         const icon = media.kind === "chart_month" ? photo : urlFor(1) ?? stocks[0]?.logo_url;
+        // Slot 2 is the portrait inside the marker. It used to be the cover
+        // image doing double duty, which meant one picture had to work both
+        // as a half-frame cover and as a 120px circle.
+        const portrait = urlFor(2) ?? story.featured_buyer?.photo_url ?? undefined;
         return (
-          <ScaledMedia ref={exportRef}>
+          <ScaledMedia ref={exportRef} nativeW={DESIGN_W} nativeH={SPLIT_H}>
             <SplitMedia
               photoUrl={photo}
               hint={media.hint ?? "Click to upload a picture"}
               onUploadClick={() => !busy && pickFile(0)}
               busy={busy}
+              width={DESIGN_W}
+              height={SPLIT_H}
             >
               <CompanyChartCard
                 companyName={company}
+                heading={media.heading ?? undefined}
                 ticker={chart.ticker || story.ticker || ""}
                 chart={chart}
                 logoUrl={icon}
+                height={SPLIT_H}
                 entryIndex={entry ? chart.entry_index : undefined}
-                entryPhotoUrl={entry ? photo ?? story.featured_buyer?.photo_url ?? undefined : undefined}
+                entryPhotoUrl={entry ? portrait : undefined}
               />
             </SplitMedia>
           </ScaledMedia>
@@ -353,16 +379,18 @@ export function ThreadCard({ story }: { story: StoryPayload }) {
       }
       case "chart_wide":
         if (!story.chart) return undefined;
+        // Standalone chart, no split and no marker: Top Movers and Big Trade's
+        // second tweet both post the card on its own at this proportion.
         return (
-          <ScaledMedia ref={exportRef} nativeW={WIDE_W} nativeH={DESIGN_H}>
+          <ScaledMedia ref={exportRef} nativeW={TALL_W} nativeH={TALL_H}>
             <CompanyChartCard
               companyName={company}
+              heading={media.heading ?? undefined}
               ticker={story.chart.ticker || story.ticker || ""}
               chart={story.chart}
               logoUrl={urlFor(1) ?? stocks[0]?.logo_url}
-              width={WIDE_W}
-              height={DESIGN_H}
-              iconSize={124}
+              width={TALL_W}
+              height={TALL_H}
             />
           </ScaledMedia>
         );

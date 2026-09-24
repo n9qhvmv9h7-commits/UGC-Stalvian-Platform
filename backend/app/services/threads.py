@@ -37,7 +37,8 @@ _BREAKING_CATEGORY = {
     "gov_contract_post": "gov",
 }
 
-# The other X tabs, one category each (Album Trades has two covers).
+# The other X tabs, one category each — except Album Trades, whose covers
+# share one trade_type and are told apart by chart_data.cover_style below.
 _OTHER_CATEGORY = {
     "trending_story": "trending",
     "album_trades_post": "caught",
@@ -55,6 +56,7 @@ CATEGORY_LABELS = {
     "gov": "Gov. contracts",
     "trending": "Trending",
     "caught": "Caught the trade",
+    "hundred_k": "$100K",
     "movers": "Movers",
     "big_buy": "Big buy",
     "hedge_fund": "Hedge fund",
@@ -74,12 +76,22 @@ _SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", 
 _ABBREVIATIONS = ("U.S", "U.K", "E.U", "Inc", "Corp", "Co", "Ltd", "vs", "e.g", "i.e", "Mr", "Ms", "Dr", "Sr", "Jr", "St")
 
 
+# An Album Trades post's tab is its cover style, not its trade_type: the
+# panel writes "caught", "hundred_k" and "month" posts all as
+# album_trades_post and dispatches on this (its services/tweets/album_trades.py
+# does the same when it composes the thread we are sent).
+_ALBUM_COVER_CATEGORY = {"caught": "caught", "hundred_k": "hundred_k", "month": "movers"}
+
+
 def category_of(item: dict) -> str | None:
     """macro | stock | fda | gov for a breaking post, trending for a trending
-    story, None for anything else."""
+    story, the cover style for an album post, None for anything else."""
     trade_type = item.get("trade_type") or ""
     if trade_type in _BREAKING_CATEGORY:
         return _BREAKING_CATEGORY[trade_type]
+    if trade_type == "album_trades_post":
+        cover = str(((item.get("chart_data") or {}).get("cover_style") or "")).strip()
+        return _ALBUM_COVER_CATEGORY.get(cover, "caught")
     if trade_type in _OTHER_CATEGORY:
         return _OTHER_CATEGORY[trade_type]
     chart = item.get("chart_data") or {}
@@ -285,10 +297,13 @@ def chart_of(item: dict, points: list | None = None) -> dict | None:
     change_abs = abs(float(end) - float(start))
     range_label = _range_label(src.get("from_date"), src.get("to_date"))
     # A trending story's card shows the insider's return SINCE THE BUY, not
-    # the window's — the same number its tweet quotes.
+    # the window's — the same number its tweet quotes. Insider Picks is the
+    # same shape of post and gets the same treatment now that it draws the
+    # marked chart: its tweet says "up 140.3%", and a card captioned with the
+    # window's 44% beside it reads as a contradiction.
     insider_pct = chart.get("insider_return_pct", chart.get("return_pct"))
     trade_type = item.get("trade_type")
-    if trade_type == "trending_story" and isinstance(insider_pct, (int, float)) and not isinstance(insider_pct, bool) and insider_pct > -100:
+    if trade_type in ("trending_story", "insider_pick_post") and isinstance(insider_pct, (int, float)) and not isinstance(insider_pct, bool) and insider_pct > -100:
         pct = float(insider_pct)
         change_abs = _since_buy(float(end), pct)
         range_label = "since the buy"
@@ -520,8 +535,10 @@ def media_plan(category: str | None, tweets: list[dict], has_chart: bool, has_bu
             {"kind": "image", "hint": "Click to upload a photo of the business"},
             {"kind": "chart_entry" if has_chart else "image", "hint": "Click to upload a portrait"},
         ]
-    elif category == "caught":
-        plan = [{"kind": "chart_entry" if has_chart else "image", "hint": "Click to upload portrait"}]
+    elif category in ("caught", "hundred_k"):
+        # One tweet either way. The $100K post differs in its words and its
+        # Instagram slides, not in the card under the tweet.
+        plan = [{"kind": "chart_entry" if has_chart else "image", "hint": "Click to upload cover image"}]
     elif category == "movers":
         plan = [
             {"kind": "chart_month" if has_chart else "image", "hint": "Click to upload company logo"},
@@ -537,9 +554,13 @@ def media_plan(category: str | None, tweets: list[dict], has_chart: bool, has_bu
             {"kind": "list_buys"} if i == 1 else {"kind": "list_sells"} for i in range(1, n)
         ]
     elif category == "insider_pick":
-        plan = [{"kind": "square_chart" if has_chart else "image", "hint": "Click to upload a person photo"}]
+        # The panel moved this off its square card onto the shared chart, in
+        # the same split frame Album Trades uses. The square card stays the
+        # fallback for a post with no chart points.
+        plan = [{"kind": "chart_entry" if has_chart else "square_chart", "hint": "Click to upload cover image"}]
     elif category == "stock_news":
-        plan = [{"kind": "square_plain" if has_chart else "image", "hint": "Click to upload an image"}]
+        # Top Movers is the shared chart card on its own — no split, no marker.
+        plan = [{"kind": "chart_wide" if has_chart else "square_plain", "hint": "Click to upload an image"}]
     else:  # stock | fda | gov — one company
         plan = [
             {"kind": "chart" if has_chart else "image", "hint": "Click to upload a company picture"},

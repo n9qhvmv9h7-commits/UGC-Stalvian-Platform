@@ -149,17 +149,27 @@ export function SplitMedia({
   hint,
   onUploadClick,
   busy,
+  width = DESIGN_W,
+  height = DESIGN_H,
+  leftWidth,
   children,
 }: {
+  /** Frame size. Chart-bearing tweets are 1600x1200 — the panel made them
+      taller so the plots stop reading flat inside X's frame. */
+  width?: number;
+  height?: number;
+  /** Width of the picture half. Defaults to half the frame. */
+  leftWidth?: number;
   photoUrl?: string | null;
   hint: string;
   onUploadClick?: () => void;
   busy?: boolean;
   children: ReactNode;
 }) {
+  const left = leftWidth ?? Math.round(width / 2);
   return (
-    <div style={{ width: DESIGN_W, height: DESIGN_H, display: "flex", background: "#FFFFFF" }}>
-      <PictureSlot url={photoUrl} hint={hint} onClick={onUploadClick} width={HALF_W} height={DESIGN_H} busy={busy} />
+    <div style={{ width, height, display: "flex", background: "#FFFFFF" }}>
+      <PictureSlot url={photoUrl} hint={hint} onClick={onUploadClick} width={left} height={height} busy={busy} />
       {children}
     </div>
   );
@@ -585,7 +595,13 @@ export const PHOTO_W = 600; // hedge-fund tweet 1: photo on the left, the table 
 export const LIST_W = 1080; // the square dark list card
 export const SQ_W = 1080; // square chart card (~1.2:1, not too tall on X)
 export const SQ_H = 900;
-export const WIDE_W = 1080; // big-buy tweet 2 chart card
+/* The panel's current frames. A split with a chart in it is 1200 tall, not
+   900: at 16:9 the plots read flat inside X's frame. A standalone chart card
+   is 1080x1289 — the reference card's 0.838 proportion, still inside X's 4:5
+   limit. */
+export const SPLIT_H = 1200;
+export const TALL_W = 1080;
+export const TALL_H = 1289;
 
 /* Hedge Fund tweet 1, right side — "Top 10 Largest Positions". */
 export function PositionsTableCard({

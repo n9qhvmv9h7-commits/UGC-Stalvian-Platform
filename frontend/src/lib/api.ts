@@ -181,6 +181,10 @@ export interface TweetMedia {
   kind: TweetMediaKind;
   /** Upload prompt on the picture (or the picture half of a split card). */
   hint?: string;
+  /** Replaces the company name on a chart card, and may carry newlines.
+      The panel sets one per tweet where the card should say something other
+      than the company's name. */
+  heading?: string | null;
 }
 
 export interface ThreadStock {
