@@ -38,6 +38,27 @@ const GRAY = "#9AA0A6";
 const INK = "#010510";
 const FONT = "var(--font-geist-sans), 'Geist', system-ui, -apple-system, sans-serif";
 
+export type CardTheme = "light" | "dark";
+
+/* Both card palettes, the panel's values. Dark is for posts meant to sit
+   flush with X's dark timeline; light is the default. The wordmark is one
+   asset filtered two ways rather than two files. */
+const THEMES: Record<
+  CardTheme,
+  { bg: string; text: string; muted: string; sub: string; iconBg: string; iconFg: string; baseline: string; logo: string }
+> = {
+  light: {
+    bg: "#FFFFFF", text: "#202124", muted: "#9AA0A6", sub: "#5F6368",
+    iconBg: "#F1F3F4", iconFg: "#3C4043", baseline: "#DADCE0",
+    logo: "brightness(0)",
+  },
+  dark: {
+    bg: "#101215", text: "#FFFFFF", muted: "#8B949E", sub: "#8B949E",
+    iconBg: "#1E2228", iconFg: "#C9D1D9", baseline: "#2A2F36",
+    logo: "brightness(0) invert(1)",
+  },
+};
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 function fmtDate(iso?: string | null): string {
@@ -144,10 +165,19 @@ export function SplitMedia({
   );
 }
 
-/* The company price card — the right half of a split. With entryIndex it
-   also pins where the featured buyer bought. */
+/* The company price card — the panel's shared chart card.
+
+   A port of CompanyChartCard in the panel's split-tweet-media.tsx as it
+   stands now. Several of the panel's tweet tabs render this same card rather
+   than drawing their own chart, so keeping it faithful keeps every one of
+   them right at once.
+
+   The layout reads top to bottom: the icon with the ticker beside it and the
+   wordmark opposite, then the company name, the price, the change, the plot,
+   and the footer. */
 export function CompanyChartCard({
   companyName,
+  heading,
   ticker,
   chart,
   logoUrl,
@@ -155,9 +185,12 @@ export function CompanyChartCard({
   entryPhotoUrl,
   width = HALF_W,
   height = DESIGN_H,
-  iconSize = 96,
+  iconSize = 124,
+  theme = "light",
 }: {
   companyName: string;
+  /** Replaces the name line, and may carry newlines (the plot shrinks to fit). */
+  heading?: string;
   ticker: string;
   chart: ThreadChart;
   logoUrl?: string | null;
@@ -166,23 +199,69 @@ export function CompanyChartCard({
   width?: number;
   height?: number;
   iconSize?: number;
+  /** Light is the default; dark sits flush with X's dark timeline. */
+  theme?: CardTheme;
 }) {
   const { price, change_abs: changeAbs, change_pct: changePct, points } = chart;
+  const t = THEMES[theme];
+  // Both footer strings share one line. They fit side by side on a 1080 card
+  // but not on an 800 half, so narrow cards step the type down rather than
+  // wrap mid-date.
+  const footFont = width >= 1000 ? 26 : 21;
   const down = changePct < 0;
   const color = down ? RED : GREEN;
   const gradId = useId();
   const markClipId = useId();
 
   const W = width - 112;
-  const H = 360;
+  // Everything but the plot measures 570px with a one-line name, and each
+  // extra line adds 55 (48px type at 1.15). Reserve per actual line, or a
+  // long name pushes the footer through the padding and off the card.
+  // No shortening here: the panel's card trims "Inc / Corp / Class B" itself
+  // because its data is raw, while this app is served a name the backend has
+  // already shortened (services/threads.py short_company_name). Doing it
+  // twice is how the two would drift.
+  const headingText = heading ?? companyName;
+  const CHROME_1_LINE = 570;
+  const LINE = 55;
+  const AVG_GLYPH = 26.4; // Geist 600 at 48px, measured in the panel
+  const perLine = Math.max(8, Math.floor((width - 112) / AVG_GLYPH));
+  const headingLines = Math.min(
+    4,
+    String(headingText || "")
+      .split("\n")
+      .reduce((total, seg) => total + Math.max(1, Math.ceil(seg.trim().length / perLine)), 0)
+  );
+  const H = Math.max(240, height - (CHROME_1_LINE + LINE * (headingLines - 1)));
   const pad = 22;
   const n = points.length;
   const min = Math.min(...points);
   const max = Math.max(...points);
   const range = max - min || 1;
   const ER = 60;
+  const STEM = 26; // dotted connector between the bubble and the point
+  const HALO = ER + 6; // ring around the bubble
+  const CLEAR = 16; // the halo stays this far off the curve
   const hasEntry = typeof entryIndex === "number" && entryIndex >= 0 && n > 1;
-  const topPad = hasEntry ? 2 * ER + 36 : pad;
+  const eIdx = hasEntry ? Math.min(Math.max(Math.round(entryIndex as number), 0), n - 1) : 0;
+  // The bubble hangs above its point, so what it clears is not the entry price
+  // but the highest price the curve reaches under the bubble's width.
+  const stepX = n > 1 ? W / (n - 1) : W;
+  const win = stepX > 0 ? Math.min(n, Math.ceil((HALO + CLEAR) / stepX)) : n;
+  const lo = Math.max(0, eIdx - win);
+  const hi = Math.min(n - 1, eIdx + win);
+  let nearMax = points[eIdx];
+  for (let i = lo; i <= hi; i++) nearMax = Math.max(nearMax, points[i]);
+  // Headroom the plot gives up: only what THIS marker needs, so a buy under a
+  // low stretch reserves nothing and the line gets the full height.
+  const NEED = 2 * HALO + CLEAR;
+  const nearRatio = hasEntry ? (nearMax - min) / range : 0; // 1 = top of range
+  const topPad = !hasEntry
+    ? pad
+    : Math.min(
+        NEED,
+        Math.max(pad, nearRatio > 0 ? (NEED - (1 - nearRatio) * (H - pad)) / nearRatio : pad)
+      );
   const xy = points.map((p, i) => {
     const x = n > 1 ? (i / (n - 1)) * W : 0;
     const y = topPad + (1 - (p - min) / range) * (H - topPad - pad);
@@ -191,10 +270,16 @@ export function CompanyChartCard({
   const polyline = xy.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const [endX, endY] = xy[xy.length - 1];
   const baselineY = xy[0][1];
-  const eIdx = hasEntry ? Math.min(Math.max(Math.round(entryIndex as number), 0), n - 1) : 0;
   const enY = hasEntry ? xy[eIdx][1] : 0;
-  const mX = hasEntry ? Math.min(Math.max(xy[eIdx][0], ER + 6), W - (ER + 6)) : 0;
-  const markCY = hasEntry ? ER + 6 : 0;
+  const enX = hasEntry ? xy[eIdx][0] : 0;
+  // The stem reads as a plumb line, so the bubble sits at the entry's x and
+  // may spill into the card's padding rather than slant. Only an entry within
+  // ~16px of an edge is nudged, and by at most that much.
+  const SPILL = 50;
+  const mX = hasEntry ? Math.min(Math.max(enX, HALO - SPILL), W - (HALO - SPILL)) : 0;
+  let yNear = enY;
+  for (let i = lo; i <= hi; i++) yNear = Math.min(yNear, xy[i][1]);
+  const markCY = hasEntry ? Math.max(HALO, Math.min(enY - ER - STEM, yNear - HALO - CLEAR)) : 0;
   const areaPath =
     `M ${xy[0][0].toFixed(1)},${xy[0][1].toFixed(1)} ` +
     xy.slice(1).map(([x, y]) => `L ${x.toFixed(1)},${y.toFixed(1)}`).join(" ") +
@@ -207,7 +292,7 @@ export function CompanyChartCard({
       style={{
         width,
         height,
-        background: "#FFFFFF",
+        background: t.bg,
         padding: 56,
         boxSizing: "border-box",
         display: "flex",
@@ -216,44 +301,71 @@ export function CompanyChartCard({
         flexShrink: 0,
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 24 }}>
-        <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 52, fontWeight: 700, color: "#202124", lineHeight: 1.15, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {companyName}
+      {/* Title row: company icon + ticker (left), wordmark (right) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 24 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 20, minWidth: 0 }}>
+          <div
+            style={{
+              width: iconSize,
+              height: iconSize,
+              borderRadius: 9999,
+              overflow: "hidden",
+              background: t.iconBg,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontWeight: 700,
+              fontSize: Math.round(iconSize * 0.48),
+              color: t.iconFg,
+              flexShrink: 0,
+            }}
+          >
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            ) : (
+              (ticker || "?").charAt(0).toUpperCase()
+            )}
           </div>
-          <div style={{ marginTop: 8, fontSize: 56, fontWeight: 700, color: "#202124", lineHeight: 1 }}>${fmt(price)}</div>
-          <div style={{ marginTop: 14, fontSize: 30, fontWeight: 600, color, display: "flex", alignItems: "center", gap: 8 }}>
-            <span style={{ fontSize: 22 }}>{down ? "▼" : "▲"}</span>
-            <span>
-              ${fmt(changeAbs)} ({changePct >= 0 ? "+" : ""}
-              {changePct.toFixed(2)}%)
-            </span>
-            <span style={{ color: GRAY, fontWeight: 500 }}>{chart.range_label}</span>
+          <div style={{ fontSize: 32, fontWeight: 600, color: t.muted, lineHeight: 1, whiteSpace: "nowrap" }}>
+            {(ticker || "").toUpperCase()}
           </div>
         </div>
-        <div
-          style={{
-            width: iconSize,
-            height: iconSize,
-            borderRadius: 9999,
-            overflow: "hidden",
-            background: "#F1F3F4",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontWeight: 700,
-            fontSize: Math.round(iconSize * 0.48),
-            color: "#3C4043",
-            flexShrink: 0,
-          }}
-        >
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={logoUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-          ) : (
-            (ticker || "?").charAt(0).toUpperCase()
-          )}
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/assets/stalvian-logo.svg"
+          alt="Stalvian"
+          style={{ height: 44, filter: t.logo, flexShrink: 0 }}
+        />
+      </div>
+
+      {/* Company name — its own line under the icon, left-aligned with it */}
+      <div
+        style={{
+          marginTop: 64,
+          fontSize: 48,
+          fontWeight: 600,
+          color: t.text,
+          lineHeight: 1.15,
+          whiteSpace: heading ? "pre-line" : "nowrap",
+          overflow: heading ? "visible" : "hidden",
+          textOverflow: heading ? "clip" : "ellipsis",
+        }}
+      >
+        {headingText}
+      </div>
+
+      <div style={{ marginTop: 12, fontSize: 52, fontWeight: 600, color: t.text, lineHeight: 1 }}>
+        ${fmt(price)}
+      </div>
+
+      <div style={{ marginTop: 14, fontSize: 30, fontWeight: 600, color, display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 22 }}>{down ? "▼" : "▲"}</span>
+        <span>
+          ${fmt(changeAbs)} ({changePct >= 0 ? "+" : ""}
+          {changePct.toFixed(2)}%)
+        </span>
+        <span style={{ color: t.muted, fontWeight: 500 }}>{chart.range_label}</span>
       </div>
 
       <div style={{ flex: 1, marginTop: 18, display: "flex", alignItems: "center" }}>
@@ -270,13 +382,14 @@ export function CompanyChartCard({
             )}
           </defs>
           <path d={areaPath} fill={`url(#${gradId})`} stroke="none" />
-          <line x1={0} y1={baselineY} x2={W} y2={baselineY} stroke="#DADCE0" strokeWidth={3} strokeDasharray="2 12" strokeLinecap="round" />
+          <line x1={0} y1={baselineY} x2={W} y2={baselineY} stroke={t.baseline} strokeWidth={3} strokeDasharray="2 12" strokeLinecap="round" />
           <polyline points={polyline} fill="none" stroke={color} strokeWidth={4} strokeLinejoin="round" strokeLinecap="round" />
           {hasEntry && (
             <>
-              <line x1={mX} y1={markCY + ER} x2={mX} y2={enY} stroke={color} strokeWidth={3} strokeDasharray="2 10" strokeLinecap="round" />
-              <circle cx={mX} cy={enY} r={10} fill={color} />
-              <circle cx={mX} cy={markCY} r={ER + 6} fill="#FFFFFF" />
+              {/* stem: bubble down to the exact point on the line */}
+              <line x1={mX} y1={markCY + ER} x2={enX} y2={enY} stroke={color} strokeWidth={3} strokeDasharray="2 10" strokeLinecap="round" />
+              <circle cx={enX} cy={enY} r={10} fill={color} />
+              <circle cx={mX} cy={markCY} r={ER + 6} fill={t.bg} />
               {entryPhotoUrl ? (
                 <>
                   <circle cx={mX} cy={markCY} r={ER + 3} fill={color} />
@@ -291,7 +404,7 @@ export function CompanyChartCard({
                   />
                 </>
               ) : (
-                <circle cx={mX} cy={markCY} r={ER} fill="#FFFFFF" stroke={color} strokeWidth={8} />
+                <circle cx={mX} cy={markCY} r={ER} fill={t.bg} stroke={color} strokeWidth={8} />
               )}
             </>
           )}
@@ -300,18 +413,15 @@ export function CompanyChartCard({
         </svg>
       </div>
 
-      <div style={{ marginTop: 18, fontSize: 26, fontWeight: 500, color: GRAY }}>
-        From {fmtDate(chart.from_date)} to {fmtDate(chart.to_date)}
-      </div>
-
-      <div style={{ marginTop: 20, display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 24 }}>
-        <p style={{ fontSize: 24, fontWeight: 400, color: "#5F6368", margin: 0, lineHeight: "130%" }}>
+      {/* Footer: the chart window (left) and the risk line (right), one line
+          each so they share a baseline. */}
+      <div style={{ marginTop: 18, display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 20 }}>
+        <div style={{ fontSize: footFont, fontWeight: 500, color: t.muted, whiteSpace: "nowrap" }}>
+          From {fmtDate(chart.from_date)} to {fmtDate(chart.to_date)}
+        </div>
+        <p style={{ fontSize: footFont - 2, fontWeight: 400, color: t.sub, margin: 0, lineHeight: "130%", textAlign: "right", whiteSpace: "nowrap" }}>
           Investing involves risk of loss.
-          <br />
-          This is not investment advice
         </p>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/assets/stalvian-logo.svg" alt="Stalvian" style={{ height: 30, filter: "brightness(0)", flexShrink: 0 }} />
       </div>
     </div>
   );
